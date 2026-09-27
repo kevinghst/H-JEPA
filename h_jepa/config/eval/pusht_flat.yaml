@@ -1,0 +1,70 @@
+# Push-T: flat level-1 planning (LeWM).
+# Sample counts: best mean success rate under 100 TFLOPs/episode.
+cache_dir: ${oc.env:STABLEWM_HOME}
+wandb:
+  enabled: false
+  entity: null
+  project: hjepa-eval
+  run_name: null
+world:
+  env_name: swm/PushT-v1
+  num_envs: ${eval.num_eval}
+  max_episode_steps: ???
+  history_size: 1
+  frame_skip: 1
+dataset:
+  stats: pusht_expert_train
+  keys_to_cache:
+  - action
+  - proprio
+  - state
+  level1:
+    frameskip: 1
+    num_steps: 1
+seed: 42
+policy: null
+dump_eval_trajs_path: null
+load_eval_trajs_path: assets/eval_trajs/pusht/goal_offset_75_val.pt
+solver:
+  _target_: stable_worldmodel.solver.GradientSolver
+  model: ???
+  n_steps: 90
+  batch_size: 1
+  var_scale: 1.0
+  num_samples: 800
+  action_noise: 0
+  device: cuda
+  seed: ${seed}
+  optimizer_cls:
+    _target_: hydra.utils.get_class
+    path: torch.optim.AdamW
+  optimizer_kwargs:
+    lr: 0.05
+plan_config:
+  resolve_horizon: true
+  horizon: 15
+  receding_horizon: 2
+  action_block: 5
+  cost_last_n: 2
+eval:
+  num_eval: 50
+  traj_sampling_mode: stratified
+  batch_eval: true
+  goal_offset_steps: 75
+  eval_budget: 90
+  expert_action_distance_horizon: null
+  expert_action_distance_dims: null
+  img_size: 224
+  dataset_name: pusht_expert_train
+  callables:
+  - method: _set_state
+    args:
+      state:
+        value: state
+  - method: _set_goal_state
+    args:
+      goal_state:
+        value: goal_state
+output:
+  dir: null
+  filename: pusht_results.txt

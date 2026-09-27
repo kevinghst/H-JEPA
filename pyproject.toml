@@ -1,0 +1,88 @@
+[project]
+name = "stable-worldmodel"
+version = "0.0.5"
+description = "World Model Research Made Simple"
+readme="README.md"
+license="MIT"
+authors = [{name = "Lucas Maes"}, {name = "Quentin Le Lidec"}, {name = "Randall Balestriero"}]
+maintainers = [{name = "Lucas Maes", email = "lucas_maes@brown.edu"}]
+urls = {Homepage = "http://github.com/galilai-group/stable-worldmodel"}
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "torchvision",
+  "numpy",
+  "loguru",
+  "tabulate",
+  "gymnasium",
+  "einops",
+  "h5py",
+  "hdf5plugin",
+  "tqdm",
+  "gdown",
+  "typer",
+  "rich",
+]
+
+[project.optional-dependencies]
+train = [
+    "transformers>=4.50.0",
+    "stable-pretraining",
+    "hydra-core",
+    "hydra-submitit-launcher",
+    "wandb",
+]
+
+env = [
+    "pygame",
+    "pymunk",
+    "shapely",
+    "ogbench",
+    "minigrid",
+    "gymnasium[all]",
+    "opencv-python",
+    "stable_baselines3",
+]
+
+[dependency-groups]
+dev = [
+  "ipdb",
+  "pytest",
+  "pytest-cov>=7.0.0",
+  "ruff",
+  "twine",
+  "mkdocs-shadcn",
+  "pymdown-extensions",
+  "pillow",
+  "decord",
+  "imageio[ffmpeg]",
+  "mkdocstrings[python]",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "."
+source-exclude = [
+    "**/.mypy_cache/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+]
+
+[tool.ruff]
+line-length = 79
+indent-width = 4
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "single"
+
+[tool.coverage.run]
+omit = ["stable_worldmodel/envs/*"]

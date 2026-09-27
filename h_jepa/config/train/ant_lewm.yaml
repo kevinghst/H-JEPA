@@ -1,0 +1,11 @@
+# Visual AntMaze: flat LeWM baseline (a single level).
+defaults:
+- base/ant
+- _self_
+output_model_name: ant_lewm
+num_levels: 1
+trainer:
+  max_epochs: 50
+max_train_batches_total: 498912
+planning_eval:
+  config_name: ant_flat

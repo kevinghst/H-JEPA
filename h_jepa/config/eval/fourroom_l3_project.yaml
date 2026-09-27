@@ -1,0 +1,180 @@
+# FourRoom Distractors: level-1 planning with the cost measured in the level-3 latent
+# (cost-ladder tables). Levels 2-4 have horizon 1, so their solves are skipped;
+# horizon_one_goal_cost_space=upper on levels 2..3 chains the projection up to level 3.
+# Levels above the model's depth are dropped, so this config serves 2/3/4-level models.
+cache_dir: ${oc.env:STABLEWM_HOME}
+wandb:
+  enabled: false
+  entity: null
+  project: hjepa-eval
+  run_name: null
+world:
+  env_name: swm/FourRoomDistractors-v0
+  num_envs: ${eval.num_eval}
+  max_episode_steps: 400
+  image_shape:
+  - 224
+  - 224
+  target_min_steps: null
+  agent_speed: 2.5
+  agent_radius: 3.5
+  wall_thickness: 10
+  door_size:
+  - 16
+  - 16
+  - 16
+  - 16
+  door_positions:
+    top: 56
+    bottom: 168
+    left: 56
+    right: 168
+  close_door_prob: 0.5
+  min_distractors: 0
+  max_distractors: 5
+  distractor_speed: 2.5
+  distractor_policy: explore
+  distractor_action_noise: 0.0
+  distractor_explore:
+    speed_noise_std: 0.0
+    turn_autocorr: 0.0
+    turn_noise_std: 0.0
+    target_heading_gain: 0.0
+    switch_tau: null
+    switch_mode: periodic
+    teleport_tau: 35
+    teleport_mode: poisson
+    initial_turn_rate_std: 0.0
+  history_size: 1
+  frame_skip: 1
+dataset:
+  stats: fourroom_7_21/tp35/fourroom_tp35_d1
+  keys_to_cache:
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  level1:
+    frameskip: 1
+    num_steps: 1
+seed: 42
+policy: null
+dump_eval_trajs_path: null
+load_eval_trajs_path: assets/eval_trajs/fourroom/fourroom_tp35_cross2_goal75_n50_d1.pt
+solver:
+  _target_: stable_worldmodel.solver.HierarchicalSolver
+  solvers:
+    level1:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+    level2:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+    level3:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+    level4:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+hierarchical_plan_config:
+  resolve_horizon: true
+  receding_horizon: 2
+  level1:
+    horizon: 23
+    action_block: 5
+    cost_last_n: 2
+    action_cost_weight: 0.0
+    action_cost_space: pooled
+  level2:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: upper
+  level3:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: upper
+  level4:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: lower
+eval:
+  num_eval: 50
+  batch_eval: true
+  goal_offset_steps: 60
+  traj_sampling_mode: random
+  eval_budget: 210
+  expert_action_distance_horizon: 15
+  expert_action_distance_dims:
+  - 0
+  - 1
+  img_size: 224
+  dataset_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
+  callables:
+  - method: _set_state
+    args:
+      state:
+        value: state
+  - method: _set_goal_state
+    args:
+      goal_state:
+        value: goal_state
+  - method: _set_distractor_positions
+    args:
+      distractor_xy:
+        value: distractor_xy
+output:
+  dir: null
+  filename: fourroom_results.txt

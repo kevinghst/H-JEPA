@@ -1,0 +1,138 @@
+# OGBench Cube: H-JEPA with 3 levels, trained end-to-end. Every upper level has stride 2.
+defaults:
+- base/cube
+- _self_
+output_model_name: cube_hjepa_l3
+num_levels: 3
+data:
+  dataset:
+    level2:
+      frameskip: ${level2.stride}
+      window_size: ${level2.window_size}
+      num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
+    level3:
+      frameskip: ${level3.stride}
+      window_size: ${level3.window_size}
+      num_steps: ${eval:'${level3.wm.history_size} + ${level3.wm.rollout_n}'}
+planning_eval:
+  config_name: cube_l3
+final_probing_decoding_eval:
+  overrides:
+    level1:
+      train_decoder: true
+      probes:
+        enabled: true
+    level2:
+      train_decoder: true
+      probes:
+        enabled: true
+    level3:
+      train_decoder: true
+      probes:
+        enabled: true
+level2:
+  lr: 1.0e-05
+  stride: 2
+  window_size: 1
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: 192
+    use_proprio: false
+    action_dim: 5
+    observation_dim: 28
+    proprio_dim: 19
+    block_pos_dim: 3
+    block_ori_dim: 6
+    effector_pos_dim: 3
+    effector_yaw_dim: 2
+    gripper_dim: 2
+    arm_joint_pos_dim: 6
+    arm_joint_vel_dim: 6
+    gripper_vel_dim: 1
+  encoder:
+    type: latent_mlp
+    input_dim: ${level1.wm.embed_dim}
+    hidden_dim: 384
+    final_ln: false
+    output_dim: ${level2.wm.embed_dim}
+    projector:
+      type: identity
+  action_pooler:
+    output_dim: 4
+    input_dim: ${level1.wm.embed_dim}
+    max_chunk: ${eval:'${data.dataset.level2.frameskip} + 1'}
+    uniform_input: true
+  action_encoder:
+    patch_embed: false
+    input_dim: ${level2.action_pooler.output_dim}
+    queue_size: 4000
+  predictor:
+    depth: 6
+    heads: 16
+    mlp_dim: 2048
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.09
+level3:
+  lr: 1.0e-05
+  stride: 2
+  window_size: 1
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: 192
+    use_proprio: false
+    action_dim: 5
+    observation_dim: 28
+    proprio_dim: 19
+    block_pos_dim: 3
+    block_ori_dim: 6
+    effector_pos_dim: 3
+    effector_yaw_dim: 2
+    gripper_dim: 2
+    arm_joint_pos_dim: 6
+    arm_joint_vel_dim: 6
+    gripper_vel_dim: 1
+  encoder:
+    type: latent_mlp
+    input_dim: ${level2.wm.embed_dim}
+    hidden_dim: 384
+    final_ln: false
+    output_dim: ${level3.wm.embed_dim}
+    projector:
+      type: identity
+  action_pooler:
+    output_dim: 4
+    input_dim: ${level2.wm.embed_dim}
+    max_chunk: ${eval:'${data.dataset.level3.frameskip} + 1'}
+    uniform_input: true
+  action_encoder:
+    patch_embed: false
+    input_dim: ${level3.action_pooler.output_dim}
+    queue_size: 4000
+  predictor:
+    depth: 6
+    heads: 16
+    mlp_dim: 2048
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.09

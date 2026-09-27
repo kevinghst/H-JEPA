@@ -1,0 +1,114 @@
+# Visual AntMaze: 2-level hierarchical planning, shared by H-JEPA and HWM.
+# Sample counts: best mean success rate under 100 TFLOPs/episode.
+cache_dir: ${oc.env:STABLEWM_HOME}
+wandb:
+  enabled: false
+  entity: null
+  project: hjepa-eval
+  run_name: null
+world:
+  env_name: swm/OGBAntMaze-v0
+  num_envs: ${eval.num_eval}
+  max_episode_steps: ???
+  history_size: 1
+  frame_skip: 1
+  ob_type: pixels
+  width: 64
+  height: 64
+  camera_name: back
+  maze_type: medium
+  dataset_type: stitch
+  terminate_at_goal: true
+dataset:
+  stats: visual_antmaze_medium_stitch_val_2_5x
+  keys_to_cache:
+  - action
+  - xy
+  - qpos
+  - qvel
+  keys_to_merge:
+    proprio:
+    - key: qpos
+      start: 2
+    - qvel
+  level1:
+    frameskip: 1
+    num_steps: 1
+seed: 42
+policy: null
+dump_eval_trajs_path: null
+load_eval_trajs_path: assets/eval_trajs/ant/expert_grid_d3_n50.pt
+solver:
+  _target_: stable_worldmodel.solver.HierarchicalSolver
+  solvers:
+    level1:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 25
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.06
+    level2:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+hierarchical_plan_config:
+  resolve_horizon: true
+  receding_horizon: 2
+  level1:
+    horizon: 4
+    pre_decay_horizon: 2
+    action_block: 5
+    cost_last_n: 2
+    action_cost_weight: 0.0
+    action_cost_space: pooled
+  level2:
+    horizon: 9
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: upper
+eval:
+  num_eval: 50
+  batch_eval: true
+  goal_offset_steps: 25
+  traj_sampling_mode: random
+  start_state_mode: xy_neutral
+  goal_state_mode: xy_neutral
+  eval_budget: 350
+  expert_action_distance_horizon: null
+  expert_action_distance_dims: null
+  img_size: 64
+  dataset_name: visual_antmaze_medium_stitch_val_2_5x
+  callables:
+  - method: set_state
+    args:
+      qpos:
+        value: qpos
+      qvel:
+        value: qvel
+  - method: set_navigation_goal
+    args:
+      goal_xy:
+        value: goal_xy
+output:
+  dir: null
+  filename: ogb_ant_results.txt

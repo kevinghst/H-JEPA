@@ -1,0 +1,11 @@
+# Push-T: flat LeWM baseline (a single level).
+defaults:
+- base/pusht
+- _self_
+output_model_name: pusht_lewm
+num_levels: 1
+trainer:
+  max_epochs: 50
+max_train_batches_total: 206982
+planning_eval:
+  config_name: pusht_flat
