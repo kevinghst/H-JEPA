@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Writing"
+  short_description: "Write and revise the H-JEPA paper, consistent with the code release."
+  default_prompt: "Use $paper-writing to write or revise the H-JEPA paper."

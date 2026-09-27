@@ -11,3 +11,6 @@ wandb/
 
 # downloaded / generated eval tasks
 h_jepa/assets/
+
+# SLURM job logs
+h_jepa/logs/
