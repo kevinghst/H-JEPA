@@ -13,8 +13,11 @@ for the H-JEPA paper (paper repo: `/mnt/vast/home/kevin/hjepa_paper`). It has to
 Anything not needed for these results does not belong here. The research history (sweeps, analysis
 skills, paper-figure pipeline, experiment records) lives in the development repo
 `/mnt/vast/home/kevin/stable-wm-lejepa` (branch `hjepa_6_24`); this release was pruned from its
-`code_release` branch. Open cleanup items are tracked in
-`/mnt/vast/home/kevin/stable-wm-lejepa/lejepa_code/codex/tasks/code_release_todo.md`.
+`code_release` branch, which is now frozen: this repo is the source of truth.
+
+- `.agents/release_todo.md`: open questions, pending work, removed/kept features. Read it first and
+  keep it up to date.
+- `.agents/provenance.md`: which paper run backs every training and planning config.
 
 ## Style
 
@@ -63,7 +66,8 @@ h_jepa/              main code; run everything from here
 ## Skills
 
 `.agents/skills/` (symlinked as `.claude/skills/`): `debug-run` (fast smoke tests of train/eval/probing
-commands), `slurm-submit` (one-off SLURM jobs), `paper-writing` (edits to the paper repo).
+commands), `release-check` (verify a change keeps the paper results reproducible), `slurm-submit`
+(one-off SLURM jobs), `paper-writing` (edits to the paper repo).
 
 ## Rules
 
