@@ -46,12 +46,17 @@ SNAP=/mnt/vast/home/kevin/H-JEPA_slurm_snapshots/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$SNAP"
 git ls-files -co --exclude-standard | rsync -a --files-from=- . "$SNAP"
 ln -s /mnt/vast/home/kevin/H-JEPA/h_jepa/assets "$SNAP/h_jepa/assets"
+git rev-parse HEAD > "$SNAP/GIT_COMMIT"
+git status --short > "$SNAP/GIT_STATUS"
+git diff HEAD > "$SNAP/UNCOMMITTED.diff"
 cd h_jepa
 sbatch .agents/skills/slurm-submit/run.sbatch "$SNAP" "python main_hjepa.py --config-name ant_hjepa_l3 seed=42"
 ```
 
-The snapshot includes uncommitted edits (tracked and untracked, non-ignored files). Share one
-snapshot across all jobs of a batch. Evals, probing and data jobs are single-shot, so they run on
+The snapshot includes uncommitted edits (tracked and untracked, non-ignored files) and records the
+commit it was taken from plus the uncommitted changes. Share one snapshot across all jobs of a batch.
+When the run dir is known up front (absolute `subdir=`), also write `<run_dir>/snapshot.txt` with the
+snapshot path, commit and SLURM job id (`sbatch --parsable`), so the run traces back to its code. Evals, probing and data jobs are single-shot, so they run on
 the live repo.
 
 ## Reporting

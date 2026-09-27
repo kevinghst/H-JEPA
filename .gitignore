@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 
 # run outputs
+experiments/
 outputs/
 multirun/
 lightning_logs/
