@@ -45,7 +45,7 @@ cd /mnt/vast/home/kevin/H-JEPA
 SNAP=/mnt/vast/home/kevin/H-JEPA_slurm_snapshots/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$SNAP"
 git ls-files -co --exclude-standard | rsync -a --files-from=- . "$SNAP"
-ln -s /mnt/vast/home/kevin/H-JEPA/h_jepa/assets "$SNAP/h_jepa/assets"
+ln -sfn /mnt/vast/home/kevin/H-JEPA/h_jepa/assets "$SNAP/h_jepa/assets"
 git rev-parse HEAD > "$SNAP/GIT_COMMIT"
 git status --short > "$SNAP/GIT_STATUS"
 git diff HEAD > "$SNAP/UNCOMMITTED.diff"
