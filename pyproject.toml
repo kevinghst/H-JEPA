@@ -1,12 +1,17 @@
 [project]
-name = "stable-worldmodel"
+name = "h-jepa"
 version = "0.0.5"
-description = "World Model Research Made Simple"
+description = "Hierarchical JEPA world models"
 readme="README.md"
 license="MIT"
-authors = [{name = "Lucas Maes"}, {name = "Quentin Le Lidec"}, {name = "Randall Balestriero"}]
-maintainers = [{name = "Lucas Maes", email = "lucas_maes@brown.edu"}]
-urls = {Homepage = "http://github.com/galilai-group/stable-worldmodel"}
+authors = [
+  {name = "Wancong Zhang"},
+  {name = "Basile Terver"},
+  {name = "Mike Rabbat"},
+  {name = "Yann LeCun"},
+  {name = "Randall Balestriero"},
+]
+urls = {Homepage = "https://github.com/kevinghst/H-JEPA"}
 classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
@@ -70,6 +75,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "."
+module-name = "stable_worldmodel"
 source-exclude = [
     "**/.mypy_cache/**",
     "**/__pycache__/**",

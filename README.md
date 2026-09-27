@@ -46,6 +46,7 @@ h_jepa/
 ## Installation
 
 ```bash
+git clone https://github.com/kevinghst/H-JEPA.git && cd H-JEPA
 conda create -n hjepa python=3.10 && conda activate hjepa
 pip install -e ".[train,env]"
 export STABLEWM_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
