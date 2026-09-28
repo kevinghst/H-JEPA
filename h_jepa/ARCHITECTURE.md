@@ -325,14 +325,12 @@ chosen macro-actions. This term is disabled by default:
 hierarchical_plan_config:
   level1:
     action_cost_weight: 0.0
-    action_cost_space: pooled  # pooled or encoded
 ```
 
 When enabled, level-N candidate actions are first encoded with level N's
-`action_encoder`, then pooled by level N+1's `action_pooler`. The default
-`pooled` action-cost space compares this pooled macro-action directly against
-the upper solver's optimized macro-action. The optional `encoded` space compares
-after both sides pass through level N+1's `action_encoder`.
+`action_encoder`, then pooled by level N+1's `action_pooler`, and this pooled
+macro-action is compared directly against the upper solver's optimized
+macro-action.
 
 For `stride=3`, `window_size=1`:
 

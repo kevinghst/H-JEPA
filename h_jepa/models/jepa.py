@@ -1,7 +1,5 @@
 """JEPA Model Implementation"""
 
-import os
-from pathlib import Path
 import torch
 import torch.nn.functional as F
 from einops import rearrange

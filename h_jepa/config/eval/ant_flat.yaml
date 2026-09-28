@@ -61,7 +61,6 @@ plan_config:
   cost_last_n: 2
 eval:
   num_eval: 50
-  batch_eval: true
   goal_offset_steps: 25
   traj_sampling_mode: random
   start_state_mode: xy_neutral

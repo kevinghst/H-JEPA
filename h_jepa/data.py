@@ -3,7 +3,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 from omegaconf import OmegaConf
-from PIL import Image
 import stable_worldmodel as swm
 from stable_pretraining import data as dt
 import torch

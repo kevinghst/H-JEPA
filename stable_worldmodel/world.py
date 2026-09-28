@@ -582,89 +582,6 @@ class World:
         if hasattr(self.policy, 'seed') and self.policy.seed is not None:
             self.policy.set_seed(self.policy.seed)
 
-    def record_video(
-        self,
-        video_path: str | Path,
-        max_steps: int = 500,
-        fps: int = 30,
-        viewname: str | list[str] = 'pixels',
-        seed: int | None = None,
-        extension: str = 'mp4',
-        options: dict | None = None,
-    ) -> None:
-        """Record rollout videos for each environment under the current policy.
-
-        Args:
-            video_path: Directory path to save the videos.
-            max_steps: Maximum steps to record per environment.
-            fps: Frames per second for the output video.
-            viewname: Key(s) in `infos` containing image data to render.
-            seed: Random seed for reset.
-            extension: Video file format ('mp4' or 'gif').
-            options: Options for reset.
-        """
-
-        assert extension in ['mp4', 'gif'], (
-            'Unsupported video format. Use "mp4" or "gif".'
-        )
-
-        import imageio
-
-        viewname = [viewname] if isinstance(viewname, str) else viewname
-        out = [
-            imageio.get_writer(
-                Path(video_path) / f'env_{i}.{extension}',
-                fps=fps,
-                codec='libx264',
-            )
-            for i in range(self.num_envs)
-        ]
-
-        self.reset(seed, options)
-
-        for i, o in enumerate(out):
-            frames_to_stack = []
-            for v_name in viewname:
-                frame_data = self.infos[v_name][i]
-                # if frame_data has a history dimension, take the last frame
-                if frame_data.ndim > 3:
-                    frame_data = frame_data[-1]
-                frames_to_stack.append(frame_data)
-            frame = np.vstack(frames_to_stack)
-
-            if 'goal' in self.infos:
-                goal_data = self.infos['goal'][i]
-                if goal_data.ndim > 3:
-                    goal_data = goal_data[-1]
-                frame = np.vstack([frame, goal_data])
-            o.append_data(frame)
-
-        for _ in range(max_steps):
-            self.step()
-
-            if np.any(self.terminateds) or np.any(self.truncateds):
-                break
-
-            for i, o in enumerate(out):
-                frames_to_stack = []
-                for v_name in viewname:
-                    frame_data = self.infos[v_name][i]
-                    # if frame_data has a history dimension, take the last frame
-                    if frame_data.ndim > 3:
-                        frame_data = frame_data[-1]
-                    frames_to_stack.append(frame_data)
-                frame = np.vstack(frames_to_stack)
-
-                if 'goal' in self.infos:
-                    goal_data = self.infos['goal'][i]
-                    if goal_data.ndim > 3:
-                        goal_data = goal_data[-1]
-                    frame = np.vstack([frame, goal_data])
-                o.append_data(frame)
-        for o in out:
-            o.close()
-        print(f'Video saved to {video_path}')
-
     def record_dataset(
         self,
         dataset_name: str,
@@ -1538,12 +1455,6 @@ class World:
         if 'goal' in goal_step and 'goal' in self.infos:
             assert np.allclose(self.infos['goal'], goal_step['goal']), (
                 'Goal info does not match'
-            )
-
-        if hasattr(self.policy, 'set_eval_reference_trajectories'):
-            self.policy.set_eval_reference_trajectories(
-                data,
-                list(columns),
             )
 
         original_lengths = np.array(

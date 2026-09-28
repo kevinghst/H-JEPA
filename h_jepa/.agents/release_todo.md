@@ -77,6 +77,15 @@ Round 2
 - non-HDF5 dataset classes (FolderDataset, ImageDataset, VideoDataset, MergeDataset, ConcatDataset,
   GoalDataset)
 
+Round 3
+- ground-truth goal-cost monotonicity/backtracking metrics (`gt_cost_*_levelN` in metrics.yaml,
+  `stable_worldmodel/goal_cost_metrics.py`, the policy's reference-trajectory encoding)
+- action_cost_space (only `pooled` kept; the `encoded` action-cost space and the config key)
+- held-out task options (eval.exclude_eval_trajs_path / exclude_min_start_gap)
+- unused imports in data.py, models/jepa.py, generate_maze_expert_grid_eval_tasks.py
+- non-batch eval path (eval.batch_eval): all episodes always run as one batched World
+- World.record_video
+
 ## Kept on purpose
 
 - precompute_levels=true path: the four paper LeWM runs trained with it (key absent -> default true).
@@ -85,14 +94,8 @@ Round 2
 - multi-step rollout loss, window_size > 1 path + seq_encoder, pixel/proprio loss components and the
   legacy flat loss format, intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per
   request).
-- ground-truth goal-cost monotonicity metrics (`gt_cost_monotonicity_levelN` in metrics.yaml).
 
 ## Unused features (candidates for removal)
 
-- [ ] ground-truth goal-cost monotonicity metrics (diagnostic only)
 - [ ] num_subgoals > 1 in hierarchical planning (1 everywhere)
-- [ ] action_cost_space other than `pooled`
-- [ ] non-batch eval path (eval.batch_eval true everywhere)
-- [ ] held-out task options (eval.exclude_eval_trajs_path / exclude_min_start_gap)
-- [ ] World.evaluate / World.record_video (only evaluate_from_dataset and record_dataset are used)
-- [ ] pre-existing unused imports (data.py, models/jepa.py, generate_maze_expert_grid_eval_tasks.py)
+- [ ] World.evaluate (only evaluate_from_dataset and record_dataset are used)

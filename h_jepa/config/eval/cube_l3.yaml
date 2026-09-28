@@ -85,7 +85,6 @@ hierarchical_plan_config:
     action_block: 5
     cost_last_n: 2
     action_cost_weight: 0.2
-    action_cost_space: pooled
   level2:
     horizon: 2
     action_block: 1
@@ -98,7 +97,6 @@ hierarchical_plan_config:
     cost_last_n: 1
 eval:
   num_eval: 50
-  batch_eval: true
   goal_offset_steps: 20
   traj_sampling_mode: random
   pickup_height_delta: 0.02

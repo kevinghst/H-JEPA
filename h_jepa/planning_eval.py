@@ -383,17 +383,6 @@ def _sample_stratified_eval_starts(cfg: DictConfig, dataset):
     # valid starts per episode: step_idx in [0, length - offset - 1]
     allowed = [np.arange(max(int(n) - int(cfg.eval.goal_offset_steps), 0)) for n in episode_len]
 
-    # held-out sets: drop starts within `exclude_min_start_gap` steps of any start
-    # of the same episode in an existing eval-traj file
-    exclude_path = cfg.eval.get("exclude_eval_trajs_path", None)
-    if exclude_path:
-        gap = int(cfg.eval.exclude_min_start_gap)
-        excluded = torch.load(exclude_path, weights_only=False)
-        for ep, start in zip(excluded["episodes_idx"], excluded["start_steps"]):
-            i = int(np.searchsorted(ep_indices, ep))
-            allowed[i] = allowed[i][np.abs(allowed[i] - int(start)) >= gap]
-        return _sample_spaced_eval_starts(cfg, ep_indices, allowed, gap)
-
     eligible = np.array([len(a) > 0 for a in allowed])
     ep_indices = ep_indices[eligible]
     allowed = [a for a, keep in zip(allowed, eligible) if keep]
@@ -436,27 +425,6 @@ def _sample_stratified_eval_starts(cfg: DictConfig, dataset):
             eval_start_idx.append(int(allowed[i][g.integers(low, high)]))
 
     return np.array(eval_episodes), np.array(eval_start_idx)
-
-
-def _sample_spaced_eval_starts(cfg, ep_indices, allowed, gap):
-    """Round-robin over shuffled episodes; each drawn start removes every start
-    within `gap` steps of it, so new starts are also `gap` apart from each other."""
-    g = np.random.default_rng(cfg.seed)
-    num_eval = int(cfg.eval.num_eval)
-    eval_episodes, eval_start_idx = [], []
-    while len(eval_episodes) < num_eval:
-        open_eps = [i for i in g.permutation(len(ep_indices)) if len(allowed[i]) > 0]
-        if not open_eps:
-            raise ValueError(
-                f"Only {len(eval_episodes)} starts fit with min gap {gap}; lower exclude_min_start_gap."
-            )
-        for i in open_eps[: num_eval - len(eval_episodes)]:
-            start = int(allowed[i][g.integers(len(allowed[i]))])
-            allowed[i] = allowed[i][np.abs(allowed[i] - start) >= gap]
-            eval_episodes.append(int(ep_indices[i]))
-            eval_start_idx.append(start)
-    order = np.lexsort((eval_start_idx, eval_episodes))
-    return np.array(eval_episodes)[order], np.array(eval_start_idx)[order]
 
 
 def _sample_cube_pickup_eval_starts(cfg: DictConfig, dataset, center_on="grasp"):
@@ -573,72 +541,12 @@ def _collect_solve_records(solver) -> list:
     return list(getattr(solver, "solve_records", []))
 
 
-def _concat_metric(metrics_list: list[dict], key: str):
-    values = []
-    for metrics in metrics_list:
-        value = metrics.get(key)
-        if value is None:
-            return None
-        values.append(np.asarray(value).reshape(-1))
-
-    return np.concatenate(values)
-
-
-def _aggregate_episode_metrics(metrics_list: list[dict]) -> dict:
-    episode_successes = _concat_metric(metrics_list, "episode_successes")
-    if episode_successes is None:
-        raise ValueError("Missing episode_successes in sequential eval metrics.")
-
-    metrics = {
-        "success_rate": float(np.mean(episode_successes) * 100.0),
-        "episode_successes": episode_successes,
-    }
-
-    for key in ("seeds", "wall_clock_to_success", "steps_to_success"):
-        value = _concat_metric(metrics_list, key)
-        if value is not None:
-            metrics[key] = value
-
-    steps_to_success = metrics.get("steps_to_success")
-    if steps_to_success is not None:
-        finite_steps = steps_to_success[np.isfinite(steps_to_success)]
-        metrics["steps_to_success_success_only"] = (
-            float(np.mean(finite_steps))
-            if finite_steps.size > 0
-            else float("nan")
-        )
-
-    for key in (
-        "state_l2",
-        "state_normalized_l2",
-        "non_proprio_state_l2",
-        "non_proprio_state_normalized_l2",
-        "expert_action_l2",
-        "proprio_ood",
-    ):
-        value = _concat_metric(metrics_list, key)
-        if value is not None:
-            finite_value = value[np.isfinite(value)]
-            metrics[key] = (
-                float(np.mean(finite_value))
-                if finite_value.size > 0
-                else float("nan")
-            )
-
-    value = _concat_metric(metrics_list, "proprio_ood_episode_means")
-    if value is not None:
-        metrics["proprio_ood_episode_means"] = value
-
-    return metrics
-
-
 def run_planning_eval(
     cfg: DictConfig,
     model=None,
     results_dir: str | Path | None = None,
 ):
     cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
-    cfg.eval.batch_eval = bool(cfg.eval.get("batch_eval", True))
     resolved_results_dir = resolve_results_dir(cfg, results_dir)
     resolved_results_dir.mkdir(parents=True, exist_ok=True)
     save_eval_config(resolved_results_dir, cfg)
@@ -658,9 +566,6 @@ def run_planning_eval(
         load_eval_trajs_path = str(_resolve_existing_path(load_eval_trajs_path))
     dump_eval_trajs_path = cfg.get("dump_eval_trajs_path", None)
     dump_eval_only = dump_eval_trajs_path is not None
-    batch_eval = bool(cfg.eval.batch_eval) or dump_eval_only
-    if not batch_eval:
-        world_cfg.num_envs = 1
 
     img_size = cfg.eval.img_size
     if isinstance(img_size, (list, tuple, ListConfig)):
@@ -704,72 +609,36 @@ def run_planning_eval(
             callables = OmegaConf.to_container(
                 cfg.eval.get("callables"), resolve=True
             )
-            if batch_eval:
-                start_steps = (
-                    eval_start_idx.tolist() if eval_start_idx is not None else None
-                )
-                episodes_idx = (
-                    eval_episodes.tolist() if eval_episodes is not None else None
-                )
-                metrics = world.evaluate_from_dataset(
-                    dataset,
-                    start_steps=start_steps,
-                    goal_offset_steps=cfg.eval.goal_offset_steps,
-                    eval_budget=cfg.eval.eval_budget,
-                    episodes_idx=episodes_idx,
-                    callables=callables,
-                    dump_eval_trajs_path=dump_eval_trajs_path,
-                    load_eval_trajs_path=load_eval_trajs_path,
-                    eval_start_index=eval_start_index,
-                    process=process,
-                    start_state_mode=cfg.eval.get(
-                        "start_state_mode", "dataset_full"
-                    ),
-                    goal_state_mode=cfg.eval.get(
-                        "goal_state_mode", "dataset_full"
-                    ),
-                    expert_action_distance_horizon=cfg.eval.get(
-                        "expert_action_distance_horizon", None
-                    ),
-                    expert_action_distance_dims=cfg.eval.get(
-                        "expert_action_distance_dims", None
-                    ),
-                )
-            else:
-                metrics_list = []
-                for episode_index in range(int(cfg.eval.num_eval)):
-                    start_steps = None
-                    episodes_idx = None
-                    if eval_start_idx is not None and eval_episodes is not None:
-                        start_steps = [int(eval_start_idx[episode_index])]
-                        episodes_idx = [int(eval_episodes[episode_index])]
-
-                    episode_metrics = world.evaluate_from_dataset(
-                        dataset,
-                        start_steps=start_steps,
-                        goal_offset_steps=cfg.eval.goal_offset_steps,
-                        eval_budget=cfg.eval.eval_budget,
-                        episodes_idx=episodes_idx,
-                        callables=callables,
-                        load_eval_trajs_path=load_eval_trajs_path,
-                        eval_start_index=eval_start_index + episode_index,
-                        process=process,
-                        start_state_mode=cfg.eval.get(
-                            "start_state_mode", "dataset_full"
-                        ),
-                        goal_state_mode=cfg.eval.get(
-                            "goal_state_mode", "dataset_full"
-                        ),
-                        expert_action_distance_horizon=cfg.eval.get(
-                            "expert_action_distance_horizon", None
-                        ),
-                        expert_action_distance_dims=cfg.eval.get(
-                            "expert_action_distance_dims", None
-                        ),
-                    )
-                    metrics_list.append(episode_metrics)
-
-                metrics = _aggregate_episode_metrics(metrics_list)
+            start_steps = (
+                eval_start_idx.tolist() if eval_start_idx is not None else None
+            )
+            episodes_idx = (
+                eval_episodes.tolist() if eval_episodes is not None else None
+            )
+            metrics = world.evaluate_from_dataset(
+                dataset,
+                start_steps=start_steps,
+                goal_offset_steps=cfg.eval.goal_offset_steps,
+                eval_budget=cfg.eval.eval_budget,
+                episodes_idx=episodes_idx,
+                callables=callables,
+                dump_eval_trajs_path=dump_eval_trajs_path,
+                load_eval_trajs_path=load_eval_trajs_path,
+                eval_start_index=eval_start_index,
+                process=process,
+                start_state_mode=cfg.eval.get(
+                    "start_state_mode", "dataset_full"
+                ),
+                goal_state_mode=cfg.eval.get(
+                    "goal_state_mode", "dataset_full"
+                ),
+                expert_action_distance_horizon=cfg.eval.get(
+                    "expert_action_distance_horizon", None
+                ),
+                expert_action_distance_dims=cfg.eval.get(
+                    "expert_action_distance_dims", None
+                ),
+            )
         end_time = time.time()
     finally:
         world.close()
@@ -781,17 +650,12 @@ def run_planning_eval(
             "sampling_mode": str(cfg.eval.get("traj_sampling_mode", "random")),
             "seed": int(cfg.seed),
             "num_episodes": int(cfg.eval.num_eval),
-            "exclude_eval_trajs_path": cfg.eval.get("exclude_eval_trajs_path", None),
-            "exclude_min_start_gap": cfg.eval.get("exclude_min_start_gap", None),
             "eval_config": OmegaConf.to_container(cfg, resolve=False),
             **generation_provenance(),
         }
         torch.save(payload, dump_eval_trajs_path)
         print(metrics)
         return metrics
-
-    if hasattr(policy, "goal_cost_metrics"):
-        metrics.update(policy.goal_cost_metrics())
 
     metrics_to_save = _serialize_metrics(metrics)
     metrics_to_save["evaluation_time"] = end_time - start_time

@@ -78,7 +78,6 @@ hierarchical_plan_config:
     action_block: 5
     cost_last_n: 2
     action_cost_weight: 0.0
-    action_cost_space: pooled
   level2:
     horizon: 9
     action_block: 1
@@ -88,7 +87,6 @@ hierarchical_plan_config:
     horizon_one_goal_cost_space: upper
 eval:
   num_eval: 50
-  batch_eval: true
   goal_offset_steps: 25
   traj_sampling_mode: random
   start_state_mode: xy_neutral

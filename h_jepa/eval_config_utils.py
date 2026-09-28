@@ -85,7 +85,6 @@ def _build_hierarchical_plan_config(cfg: DictConfig) -> swm.HierarchicalPlanConf
             cost_last_n=_build_cost_last_n(level_cfg.get('cost_last_n', 1)),
             intermediate_cost_weight=float(level_cfg.get('intermediate_cost_weight', 1.0)),
             action_cost_weight=float(level_cfg.get('action_cost_weight', 0.0)),
-            action_cost_space=str(level_cfg.get('action_cost_space', 'pooled')),
             horizon_one_goal_cost_space=str(
                 level_cfg.get('horizon_one_goal_cost_space', 'lower')
             ),

@@ -140,7 +140,7 @@ class _HierarchicalLevelModel(nn.Module):
         temporal_stride: int | None = None,
         dense: bool = False,
         state_len: int | None = None,
-    ) -> dict[str, torch.Tensor]:
+    ) -> torch.Tensor:
         input_key = f'embed_{self.level}'
         flat_pred, sample_shape = self._flatten_samples(prepared_pred)
         prepared_action = self._prepare_upper_action_stream(
@@ -171,13 +171,9 @@ class _HierarchicalLevelModel(nn.Module):
             pooled = self.upper_model.action_pooler(chunked["action"])
         else:
             pooled = self.upper_model.action_pooler(chunked["action"], action_mask)
-        encoded = self.upper_model.action_encoder(pooled)
 
         # The final pooled action points beyond the final encoded upper state.
-        return {
-            "pooled": self._restore_samples(pooled, sample_shape)[..., :-1, :],
-            "encoded": self._restore_samples(encoded, sample_shape)[..., :-1, :],
-        }
+        return self._restore_samples(pooled, sample_shape)[..., :-1, :]
 
     def _encode_with_upper(
         self,
@@ -187,10 +183,10 @@ class _HierarchicalLevelModel(nn.Module):
         use_upper_space: bool = True,
         dense_upper_goal_projection: bool = False,
         goal_level: int | None = None,
-    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None]:
         """Encode predicted embeddings through the upper-level JEPA encoder(s)."""
         if self.upper_model is None or not use_upper_space:
-            return {"predicted_embed_0": pred_emb}, {}
+            return {"predicted_embed_0": pred_emb}, None
         if goal_level is None:
             goal_level = self.level + 1
 
@@ -248,7 +244,7 @@ class _HierarchicalLevelModel(nn.Module):
                 upper_out[output_key],
                 sample_shape,
             )
-        action_for_cost = {}
+        action_for_cost = None
         if action_candidates is not None:
             action_for_cost = self._project_actions_with_upper(
                 prepared_pred,
@@ -301,17 +297,10 @@ class _HierarchicalLevelModel(nn.Module):
 
     def _action_cost(
         self,
-        pred_actions: dict[str, torch.Tensor],
+        pred_action: torch.Tensor | None,
         info_dict: dict,
     ) -> torch.Tensor | None:
-        space = str(info_dict.get("action_cost_space", "pooled")).lower()
-        if space not in {"encoded", "pooled"}:
-            raise ValueError(
-                f"Unknown action_cost_space={space!r}; expected 'encoded' or 'pooled'."
-            )
-
-        pred_action = pred_actions.get(space)
-        target_action = info_dict.get(f"goal_action_{space}")
+        target_action = info_dict.get("goal_action")
         if pred_action is None or target_action is None:
             return None
 
@@ -757,13 +746,11 @@ class HierarchicalSolver:
         self,
         level: int,
         actions: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Return upper solver actions in both macro and encoded spaces."""
+    ) -> torch.Tensor:
+        """Return upper solver actions in the pooled macro-action space."""
         jepa = self.level_models[level - 1]
         device = next(jepa.parameters()).device
-        pooled = actions.to(device).detach()
-        encoded = jepa.action_encoder(pooled).detach()
-        return {"pooled": pooled, "encoded": encoded}
+        return actions.to(device).detach()
 
     def solve(
         self,
@@ -845,8 +832,7 @@ class HierarchicalSolver:
                         }
                 level_info['goal_embed_0'] = next_goal
                 if next_action_targets is not None:
-                    level_info['goal_action_pooled'] = next_action_targets["pooled"]
-                    level_info['goal_action_encoded'] = next_action_targets["encoded"]
+                    level_info['goal_action'] = next_action_targets
                 level_info['goal_embed_0_in_upper_space'] = True
                 horizon_one_upper_goal_level = None
             elif horizon_one_upper_goal_level is not None:
@@ -878,9 +864,6 @@ class HierarchicalSolver:
             level_cfg = self._level_plan_config(level)
             level_info['action_cost_weight'] = float(
                 getattr(level_cfg, 'action_cost_weight', 0.0)
-            )
-            level_info['action_cost_space'] = str(
-                getattr(level_cfg, 'action_cost_space', 'pooled')
             )
             level_span = self._level_span(
                 level,

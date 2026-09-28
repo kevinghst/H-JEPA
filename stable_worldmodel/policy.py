@@ -13,10 +13,8 @@ from loguru import logger as logging
 from torchvision import tv_tensors
 
 import stable_worldmodel as swm
-from stable_worldmodel.goal_cost_metrics import GOAL_COST_METRICS
 from stable_worldmodel.solver import Solver
 
-ORIGINAL_LENGTH_KEY = '_original_length'
 VALID_LAST_INDEX_KEY = '_valid_last_index'
 
 
@@ -71,7 +69,6 @@ class PlanConfig:
     cost_last_n: int | list[int] = 1
     intermediate_cost_weight: float = 1.0
     action_cost_weight: float = 0.0
-    action_cost_space: str = 'pooled'
     horizon_one_goal_cost_space: str = 'lower'
 
 
@@ -412,7 +409,6 @@ class WorldModelPolicy(BasePolicy):
         self.eval_budget: int | None = getattr(self, 'eval_budget', None)
         self._steps_taken = 0
         self._policy_call_count = 0
-        self._gt_cost_metrics: dict[str, list[float]] = {}
 
     @property
     def execution_plan_config(self) -> PlanConfig:
@@ -466,211 +462,6 @@ class WorldModelPolicy(BasePolicy):
         """Return whether the solver accepts eval-budget planning kwargs."""
         params = inspect.signature(self.solver.solve).parameters
         return 'steps_taken' in params and 'eval_budget' in params
-
-    def _decoder_model(self) -> torch.nn.Module | None:
-        return getattr(self.solver, 'model', None)
-
-    @staticmethod
-    def _to_numpy(value: Any) -> np.ndarray:
-        if torch.is_tensor(value):
-            return value.detach().cpu().numpy()
-        return np.asarray(value)
-
-    @staticmethod
-    def _prefix_repeat_first(x: torch.Tensor, count: int) -> torch.Tensor:
-        if count <= 0:
-            return x
-
-        prefix = x[:, :1].expand(-1, count, *x.shape[2:])
-        return torch.cat([prefix, x], dim=1)
-
-    def _goal_cost_level_models(self) -> list[torch.nn.Module]:
-        model = self._decoder_model()
-        if model is None:
-            return []
-        if hasattr(model, 'num_levels') and hasattr(model, 'get_level'):
-            return [
-                model.get_level(level)
-                for level in range(1, int(model.num_levels) + 1)
-            ]
-        if hasattr(model, 'jepas'):
-            return list(model.jepas)
-        if isinstance(model, torch.nn.Module) and hasattr(model, 'encode'):
-            return [model]
-        return []
-
-    @staticmethod
-    def _goal_cost_level_uses_proprio(jepa: torch.nn.Module) -> bool:
-        encoder = getattr(jepa, 'encoder', None)
-        return hasattr(encoder, 'pixel_encoder') and hasattr(
-            encoder,
-            'proprio_encoder',
-        )
-
-    def _goal_cost_level_input_key(
-        self,
-        level: int,
-        jepa: torch.nn.Module,
-    ) -> str:
-        if level == 1:
-            return 'pixels'
-        if self._goal_cost_level_uses_proprio(jepa):
-            return f'pixel_embed_{level - 1}'
-        return f'embed_{level - 1}'
-
-    def _prepare_goal_cost_info(
-        self, raw_info: dict[str, Any]
-    ) -> dict[str, torch.Tensor]:
-        info = {}
-        for key, value in raw_info.items():
-            if value is None:
-                continue
-            if (
-                key == 'pixels'
-                or key == 'proprio'
-                or key in self.process
-                or key in self.transform
-            ):
-                info[key] = value
-        return self._prepare_info(info)
-
-    def _encode_goal_cost_levels(
-        self,
-        info_dict: dict[str, torch.Tensor],
-    ) -> dict[int, torch.Tensor]:
-        level_models = self._goal_cost_level_models()
-        if not level_models or 'pixels' not in info_dict:
-            return {}
-
-        device = next(level_models[0].parameters()).device
-        encoded = {}
-        for key, value in info_dict.items():
-            if not torch.is_tensor(value):
-                value = torch.as_tensor(value)
-            encoded[key] = value.to(device)
-
-        outputs = {}
-        with torch.no_grad():
-            for level, jepa in enumerate(level_models, start=1):
-                input_key = self._goal_cost_level_input_key(level, jepa)
-                if level > 1:
-                    if input_key not in encoded:
-                        break
-                    window_size = int(getattr(jepa, 'temporal_window_size', 1))
-                    encoded[input_key] = self._prefix_repeat_first(
-                        encoded[input_key],
-                        window_size - 1,
-                    )
-                    if self._goal_cost_level_uses_proprio(jepa):
-                        proprio_key = f'proprio_embed_{level - 1}'
-                        if proprio_key not in encoded:
-                            break
-                        model_proprio_key = getattr(
-                            jepa.encoder,
-                            'proprio_key',
-                            'proprio',
-                        )
-                        encoded[model_proprio_key] = self._prefix_repeat_first(
-                            encoded[proprio_key],
-                            window_size - 1,
-                        )
-
-                level_out = jepa.encode(
-                    encoded,
-                    key=input_key,
-                    chunk_temporal_inputs=level > 1,
-                    temporal_stride=1,
-                    temporal_window_size=int(
-                        getattr(jepa, 'temporal_window_size', 1)
-                    ),
-                )
-                if 'embed_0' not in level_out:
-                    break
-
-                embed = level_out['embed_0'].detach()
-                encoded[f'embed_{level}'] = embed
-                for output_name in ('pixel_embed', 'proprio_embed'):
-                    output_key = f'{output_name}_0'
-                    if output_key in level_out:
-                        encoded[f'{output_name}_{level}'] = level_out[
-                            output_key
-                        ].detach()
-                outputs[level] = embed
-
-        return outputs
-
-    def _goal_cost_values(
-        self,
-        level: int,
-        embeddings: torch.Tensor,
-        goal_embedding: torch.Tensor,
-    ) -> np.ndarray:
-        level_models = self._goal_cost_level_models()
-        if level < 1 or level > len(level_models):
-            return np.empty(0, dtype=np.float64)
-
-        goal = goal_embedding.to(embeddings.device)
-        if goal.ndim == 1:
-            goal = goal.unsqueeze(0)
-        if goal.shape[0] == 1:
-            goal = goal.expand(embeddings.shape[0], *goal.shape[1:])
-
-        cost = (embeddings - goal).pow(2)
-        return cost.reshape(cost.shape[0], -1).sum(dim=1).detach().cpu().numpy()
-
-    def _record_goal_cost_metrics(
-        self,
-        embeddings_by_level: dict[int, torch.Tensor],
-        valid_lengths: dict[int, int],
-    ) -> None:
-        """Goal-cost monotonicity along each reference (expert) trajectory."""
-        for level, embeddings in embeddings_by_level.items():
-            for env_idx in range(embeddings.shape[0]):
-                if embeddings.shape[1] == 0:
-                    continue
-                env_embeddings = embeddings[env_idx]
-                values = self._goal_cost_values(level, env_embeddings, env_embeddings[-1:])
-                if values.size == 0:
-                    continue
-                valid_length = max(1, min(int(valid_lengths[env_idx]), values.shape[0]))
-                values = values[:valid_length]
-                for name, fn in GOAL_COST_METRICS.items():
-                    self._gt_cost_metrics.setdefault(f'{name}_level{level}', []).append(fn(values))
-
-    def goal_cost_metrics(self) -> dict[str, float]:
-        """Per-level ground-truth goal-cost monotonicity, meaned over episodes
-        (same episode-averaging as success_rate)."""
-        return {
-            key: float(np.mean(values))
-            for key, values in self._gt_cost_metrics.items()
-        }
-
-    def set_eval_reference_trajectories(
-        self,
-        data: list[dict[str, Any]],
-        columns: list[str],
-    ) -> None:
-        if not data or 'pixels' not in columns:
-            return
-
-        valid_lengths = {}
-        for env_idx, ep in enumerate(data):
-            fallback_length = self._to_numpy(ep['pixels']).shape[0]
-            valid_lengths[env_idx] = int(ep.get(ORIGINAL_LENGTH_KEY, fallback_length))
-        raw_info: dict[str, Any] = {
-            'pixels': np.stack([self._to_numpy(ep['pixels']) for ep in data]),
-        }
-        if 'proprio' in columns and all('proprio' in ep for ep in data):
-            raw_info['proprio'] = np.stack(
-                [self._to_numpy(ep['proprio']) for ep in data]
-            )
-
-        info = self._prepare_goal_cost_info(raw_info)
-        embeddings_by_level = self._encode_goal_cost_levels(info)
-        if not embeddings_by_level:
-            return
-
-        self._record_goal_cost_metrics(embeddings_by_level, valid_lengths)
 
     def get_action(self, info_dict: dict, **kwargs: Any) -> np.ndarray:
         """Get action via planning with the world model.

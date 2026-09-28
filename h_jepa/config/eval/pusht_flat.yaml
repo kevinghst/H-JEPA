@@ -49,7 +49,6 @@ plan_config:
 eval:
   num_eval: 50
   traj_sampling_mode: stratified
-  batch_eval: true
   goal_offset_steps: 75
   eval_budget: 90
   expert_action_distance_horizon: null
