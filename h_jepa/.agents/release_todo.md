@@ -131,6 +131,17 @@ Round 4
   on-train-start evals, `config_path`, multi-seed aggregation and `_se` keys (the end-of-training
   `metrics.yaml` now has the same schema as `eval.py`'s; planner seed = `cfg.seed`; config keys
   `planning_eval.{every_n_epochs,run_on_train_start,seeds}`)
+- probing: W&B decoder image logging (the `decodings/` PNGs stay) and the `visualization` options
+  (always 32 uniformly spaced clips of the first eval set); `_add_distractor_aggregate`; probe
+  `architectures`, per-level `decoder.config` / `decoder.enabled` (`levelN.train_decoder` stays),
+  the Adam branch and `optimizer.type` / `optimizer.prober` / `optimizer.decoder` groups,
+  `img_size` / `patch_size` overrides, `probe_targets`, `policy_config_path`, `max_epochs`,
+  `load_probing_config(config_path)`; `_validate_dataset_cfg`, `_validate_eval_targets`, the
+  eval-set key regex, the `_limit_batches` positivity check; `ConvProber` and the `linear` / `conv`
+  prober types (`build_prober` is the 512-unit MLP); probing config keys `env`, `description`,
+  top-level `num_workers`, `probe_targets`, Ant's `visualization` block. Kept: the `output_dir`
+  override (the debug-run skill uses it) and `_dataset_col_variance`'s fallback for datasets
+  without `get_col_stats` (only the Ant mixture has it; the audit wrongly listed it as dead).
 
 ## Kept on purpose
 
@@ -198,18 +209,6 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
 ### Safe dead code: probing (probing itself is kept)
 - [ ] Per-dimension / summary CSVs and their logging, `manifest.yaml`, `eval_metrics_history.yaml`,
   `heads.ckpt` (duplicates `decoder_levelN.ckpt`), `policy_train_config.yaml`.
-- [x] W&B decoder image logging (keep the `decodings/` PNGs); `visualization` options
-  (`random_fixed`, named `eval_dataset`, `every_n_epochs`; ant block equals defaults).
-- [x] `_add_distractor_aggregate` (averages the single `distractor0_xy` probe).
-- [x] Unset config plumbing: probe `architectures`, per-level `decoder.config` / `enabled`, Adam
-  branch and `optimizer.decoder`, `img_size` / `patch_size` overrides, `probe_targets`,
-  `policy_config_path` / `output_dir` / `max_epochs` fallbacks, `load_probing_config` `config_path`.
-- [x] Defensive checks (`_validate_dataset_cfg`, `_validate_eval_targets`, key regex,
-  non-`get_col_stats` branch). Keep `limit_*_batches` and `save_artifacts` (debug-run uses them).
-- [x] `models/probers.py`: `ConvProber`, `_build_conv_prober`, `PROBER_CONV_LAYERS_CONFIG`, `linear`
-  type (every probe is the 512-unit MLP).
-- [x] `config/probing/*.yaml`: unread `env` / `description`, duplicate top-level `num_workers`,
-  `optimizer.prober` equal to the base, `probe_targets: null`.
 
 ### Safe dead code: scripts
 - [ ] `load_eval_config` `config_path` branch: only the generators' `--config-path` flags still pass

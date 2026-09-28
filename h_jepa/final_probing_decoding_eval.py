@@ -49,22 +49,8 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-def load_probing_config(config_name=None, config_path=None):
-    if config_path not in (None, "", "null"):
-        path = Path(config_path).expanduser()
-    elif config_name not in (None, "", "null"):
-        name = str(config_name)
-        if not name.endswith((".yaml", ".yml")):
-            name = f"{name}.yaml"
-        path = Path(__file__).resolve().parent / "config" / "probing" / name
-    else:
-        raise ValueError(
-            "final_probing_decoding_eval.config_name or config_path must be set."
-        )
-
-    if not path.exists():
-        raise FileNotFoundError(f"Probing config not found: {path}")
-    return OmegaConf.load(path)
+def load_probing_config(config_name):
+    return OmegaConf.load(Path(__file__).resolve().parent / "config" / "probing" / f"{config_name}.yaml")
 
 
 def _plain_container(node) -> dict:
@@ -86,10 +72,10 @@ def _normalizer_path_for_policy(policy_path: str | Path) -> Path:
     return Path(policy_path).expanduser().parent / NORMALIZER_ARTIFACT_FILENAME
 
 
-def _load_policy(policy, cache_dir, config_path=None):
+def _load_policy(policy, cache_dir):
     ckpt_path = resolve_model_checkpoint_path(str(policy), cache_dir)
     model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    train_cfg = load_training_config_for_checkpoint(ckpt_path, config_path)
+    train_cfg = load_training_config_for_checkpoint(ckpt_path)
     return model, ckpt_path, train_cfg
 
 
@@ -98,9 +84,6 @@ def _freeze_model(model: nn.Module) -> nn.Module:
     for parameter in model.parameters():
         parameter.requires_grad = False
     return model
-
-
-_EVAL_DATASET_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _can_skip_cpu_image_preprocess(train_dataset, eval_datasets, col, img_size):
@@ -134,62 +117,9 @@ def _normalize_uint8_images_on_device(batch):
         batch[key] = value.float().div(255.0).sub(mean).div(std)
 
 
-def _validate_dataset_cfg(dataset_key: str, dataset_cfg: dict) -> None:
-    keys_to_load = dataset_cfg.get("keys_to_load", []) or []
-    if "action" not in keys_to_load:
-        raise ValueError(
-            f"Probing dataset '{dataset_key}' must include 'action' in "
-            "keys_to_load because the shared HDF5Dataset loader expects it when "
-            "constructing clips."
-        )
-    if "pixels" not in keys_to_load:
-        raise ValueError(
-            f"Probing dataset '{dataset_key}' must include 'pixels' in keys_to_load "
-            "for dense HJEPA encoding and decoder targets."
-        )
-
-
-def _validate_eval_targets(cfg, eval_dataset_cfgs: dict[str, dict]) -> None:
-    target_columns = _target_columns(cfg)
-    for eval_key, dataset_cfg in eval_dataset_cfgs.items():
-        keys_to_load = set(dataset_cfg.get("keys_to_load", []) or [])
-        missing = [col for col in target_columns if col not in keys_to_load]
-        if missing:
-            raise ValueError(
-                f"eval_datasets.{eval_key}.keys_to_load is missing probe target "
-                f"columns {missing}."
-            )
-
-
-def _eval_dataset_cfgs(cfg) -> dict[str, dict]:
-    eval_dataset_cfgs = cfg.get("eval_datasets", None)
-    if eval_dataset_cfgs is None:
-        raise ValueError(
-            "Probing config must define eval_datasets. Use one keyed entry even "
-            "when evaluating on only one dataset."
-        )
-
-    eval_dataset_cfgs = _plain_container(eval_dataset_cfgs)
-    if not eval_dataset_cfgs:
-        raise ValueError("eval_datasets must contain at least one dataset.")
-
-    resolved = {}
-    for key, dataset_cfg in eval_dataset_cfgs.items():
-        key = str(key)
-        if _EVAL_DATASET_KEY_RE.fullmatch(key) is None:
-            raise ValueError(
-                "eval_datasets keys must contain only letters, numbers, '_' or "
-                f"'-' for clean W&B paths; got {key!r}."
-            )
-        resolved[key] = _plain_container(dataset_cfg)
-    return resolved
-
-
 def _build_datasets(cfg, normalizer_artifact, train_cfg):
     train_dataset_cfg = _plain_container(cfg.train_dataset)
-    _validate_dataset_cfg("train", train_dataset_cfg)
-    eval_dataset_cfgs = _eval_dataset_cfgs(cfg)
-    _validate_eval_targets(cfg, eval_dataset_cfgs)
+    eval_dataset_cfgs = _plain_container(cfg.eval_datasets)
 
     cache_dir = _cache_dir(cfg)
     train_dataset = build_hdf5_dataset(
@@ -199,14 +129,13 @@ def _build_datasets(cfg, normalizer_artifact, train_cfg):
 
     eval_datasets = {}
     for eval_key, eval_dataset_cfg in eval_dataset_cfgs.items():
-        _validate_dataset_cfg(eval_key, eval_dataset_cfg)
         eval_dataset = build_hdf5_dataset(
             eval_dataset_cfg,
             cache_dir=cache_dir,
         )
         eval_datasets[eval_key] = eval_dataset
 
-    img_size = int(cfg.get("img_size", train_cfg.img_size))
+    img_size = int(train_cfg.img_size)
     extra_transforms = []
     for col in train_dataset_cfg.get("keys_to_load", []) or []:
         if col.startswith("pixels"):
@@ -239,7 +168,6 @@ def _build_datasets(cfg, normalizer_artifact, train_cfg):
 def _loader_cfg(cfg, *, train: bool) -> dict:
     base = _plain_container(cfg.get("loader", {}))
     base.setdefault("batch_size", 128)
-    base.setdefault("num_workers", int(cfg.get("num_workers", 0)))
     base.setdefault("pin_memory", True)
     base.setdefault("persistent_workers", base.get("num_workers", 0) > 0)
     base.setdefault("drop_last", train)
@@ -255,10 +183,6 @@ def _loader_cfg(cfg, *, train: bool) -> dict:
 
 def _target_columns(cfg) -> list[str]:
     dataset_cfg = _plain_container(cfg.train_dataset)
-    configured = cfg.get("probe_targets", None)
-    if configured is not None:
-        return [str(col) for col in configured]
-
     columns = []
     for col in dataset_cfg.get("keys_to_load", []) or []:
         if col.startswith("pixels") or col == "action":
@@ -271,22 +195,6 @@ def _level_cfg(cfg, level: int) -> dict:
     return _plain_container(cfg.get(f"level{level}", {}))
 
 
-def _probe_cfg(cfg, train_cfg, level: int, col: str) -> dict:
-    level_cfg = _level_cfg(cfg, level)
-    probes_cfg = level_cfg.get("probes", {}) or {}
-    architectures = probes_cfg.get("architectures", {}) or {}
-    if col in architectures:
-        return _plain_container(architectures[col] or {})
-
-    train_level_cfg = train_cfg.get(f"level{level}", None)
-    if train_level_cfg is None:
-        return {}
-    train_probes_cfg = train_level_cfg.get("probes", {}) or {}
-    return _plain_container(
-        (train_probes_cfg.get("architectures", {}) or {}).get(col, {}) or {}
-    )
-
-
 def _probe_enabled(cfg, level: int) -> bool:
     level_cfg = _level_cfg(cfg, level)
     probes_cfg = level_cfg.get("probes", {}) or {}
@@ -297,27 +205,7 @@ def _probe_enabled(cfg, level: int) -> bool:
 
 def _train_decoder_enabled(cfg, level: int) -> bool:
     level_cfg = _level_cfg(cfg, level)
-    if "train_decoder" in level_cfg:
-        return bool(level_cfg["train_decoder"])
-    decoder_cfg = level_cfg.get("decoder", None)
-    if isinstance(decoder_cfg, dict) and "enabled" in decoder_cfg:
-        return bool(decoder_cfg["enabled"])
-    return False
-
-
-def _decoder_kwargs(cfg, level: int) -> dict:
-    base = _plain_container(cfg.get("decoder", {}))
-
-    level_cfg = _level_cfg(cfg, level)
-    override = level_cfg.get("decoder", {}) or {}
-    if "config" in override:
-        override = override.get("config", {}) or {}
-    else:
-        override = {
-            key: value for key, value in override.items() if key != "enabled"
-        }
-    base.update(_plain_container(override))
-    return base
+    return bool(level_cfg.get("train_decoder", False))
 
 
 def _embed_dim(model, train_cfg, level: int) -> int:
@@ -384,36 +272,16 @@ def _flatten_time(x: torch.Tensor) -> torch.Tensor:
 
 
 def _optimizer(heads, cfg):
-    optimizer_cfg = _plain_container(cfg.get("optimizer", {}))
-    opt_type = str(optimizer_cfg.get("type", "AdamW")).lower()
-    lr = float(optimizer_cfg.get("lr", 1e-3))
-    weight_decay = float(optimizer_cfg.get("weight_decay", 0.0))
-
     param_groups = []
-    for name, module in (("prober", heads.probers), ("decoder", heads.decoders)):
+    for module in (heads.probers, heads.decoders):
         parameters = [param for param in module.parameters() if param.requires_grad]
-        if not parameters:
-            continue
-
-        group_cfg = _plain_container(optimizer_cfg.get(name, {}))
-        param_groups.append(
-            {
-                "params": parameters,
-                "lr": float(group_cfg.get("lr", lr)),
-                "weight_decay": float(
-                    group_cfg.get("weight_decay", weight_decay)
-                ),
-            }
-        )
-
-    if not param_groups:
-        raise ValueError("No trainable final probing/decoding head parameters found.")
-
-    if opt_type == "adamw":
-        return torch.optim.AdamW(param_groups)
-    if opt_type == "adam":
-        return torch.optim.Adam(param_groups)
-    raise ValueError(f"Unsupported probing optimizer type: {optimizer_cfg.get('type')!r}")
+        if parameters:
+            param_groups.append({"params": parameters})
+    return torch.optim.AdamW(
+        param_groups,
+        lr=float(cfg.optimizer.lr),
+        weight_decay=float(cfg.optimizer.weight_decay),
+    )
 
 
 class FinalProbeDecodeHeads(nn.Module):
@@ -433,10 +301,8 @@ class FinalProbeDecodeHeads(nn.Module):
             if _probe_enabled(cfg, level):
                 for col in self.target_columns:
                     name = f"level{level}_probe_{col}"
-                    probe_cfg = _probe_cfg(cfg, train_cfg, level, col)
                     output_dim = int(train_dataset.get_dim(col))
                     self.probers[name] = build_prober(
-                        probe_cfg,
                         input_dim=input_dim,
                         output_dim=output_dim,
                     )
@@ -446,7 +312,6 @@ class FinalProbeDecodeHeads(nn.Module):
                         "input": f"embed_{level}",
                         "input_dim": input_dim,
                         "output_dim": output_dim,
-                        "config": probe_cfg,
                     }
                     if col not in normalizer_stats:
                         raise KeyError(
@@ -458,20 +323,20 @@ class FinalProbeDecodeHeads(nn.Module):
                     ).reshape(1, -1)
 
             if _train_decoder_enabled(cfg, level):
-                decoder_kwargs = _decoder_kwargs(cfg, level)
+                decoder_kwargs = _plain_container(cfg.decoder)
                 decoder_name = f"decoder_level{level}"
                 self.decoders[decoder_name] = CLSDecoder(
                     cls_dim=input_dim,
-                    img_size=int(cfg.get("img_size", train_cfg.img_size)),
-                    patch_size=int(cfg.get("patch_size", train_cfg.patch_size)),
+                    img_size=int(train_cfg.img_size),
+                    patch_size=int(train_cfg.patch_size),
                     **decoder_kwargs,
                 )
                 self.decoder_metadata[decoder_name] = {
                     "level": level,
                     "input": f"embed_{level}",
                     "cls_dim": input_dim,
-                    "img_size": int(cfg.get("img_size", train_cfg.img_size)),
-                    "patch_size": int(cfg.get("patch_size", train_cfg.patch_size)),
+                    "img_size": int(train_cfg.img_size),
+                    "patch_size": int(train_cfg.patch_size),
                     "decoder_kwargs": decoder_kwargs,
                 }
 
@@ -549,21 +414,6 @@ def _mean(values: list[float]) -> float:
     return sum(values) / max(len(values), 1)
 
 
-_DISTRACTOR_PROBE_RE = re.compile(r"^probe/level(\d+)_probe_distractor\d+_xy$")
-
-
-def _add_distractor_aggregate(results: dict) -> None:
-    """Add a per-level mean over the individual distractor-probe metrics."""
-    by_level: dict[int, list[float]] = {}
-    for key, value in list(results.items()):
-        match = _DISTRACTOR_PROBE_RE.match(key)
-        if match is None or not math.isfinite(float(value)):
-            continue
-        by_level.setdefault(int(match.group(1)), []).append(float(value))
-    for level, values in by_level.items():
-        results[f"probe/level{level}_probe_distractors_mean"] = _mean(values)
-
-
 def _weighted_metric_means(
     metric_totals: dict[str, float],
     metric_weights: dict[str, int],
@@ -623,15 +473,6 @@ def _probe_metric_variances(heads, dataset, device) -> dict[str, torch.Tensor]:
         variances[name] = cache[target_col]
 
     return variances
-
-
-def _wandb_image_logger(logger, wandb_run):
-    if wandb_run is not None:
-        return wandb_run
-    if logger is None or not hasattr(logger, "experiment"):
-        return None
-    experiment = logger.experiment
-    return experiment if hasattr(experiment, "log") else None
 
 
 def _log_metrics(logger, wandb_run, metrics: dict[str, float], step: int | None):
@@ -708,71 +549,24 @@ def _unnormalize_image_tensor(images: torch.Tensor) -> torch.Tensor:
     return torch.clamp(images * std + mean, 0, 1)
 
 
-def _visualization_cfg(cfg) -> dict:
-    base = {
-        "enabled": True,
-        "every_n_epochs": 1,
-        "num_frames": 32,
-        "eval_dataset": None,
-        "sampling": "uniform",
-        "seed": 42,
-    }
-    base.update(_plain_container(cfg.get("visualization", {})))
-    return base
-
-
-def _representative_eval_dataset(eval_datasets, viz_cfg):
-    if not eval_datasets:
-        return None, None
-    requested = viz_cfg.get("eval_dataset", None)
-    if requested not in (None, "", "null", "first"):
-        requested = str(requested)
-        if requested not in eval_datasets:
-            raise KeyError(
-                f"visualization.eval_dataset={requested!r} is not in eval_datasets: "
-                f"{list(eval_datasets)}"
-            )
-        return requested, eval_datasets[requested]
-    key = next(iter(eval_datasets))
-    return key, eval_datasets[key]
-
-
-def _visualization_indices(dataset, viz_cfg) -> list[int]:
-    dataset_len = len(dataset)
-    if dataset_len <= 0:
-        return []
-
-    num_frames = min(int(viz_cfg.get("num_frames", 32)), dataset_len)
-    sampling = str(viz_cfg.get("sampling", "uniform"))
-    if sampling == "uniform":
-        if num_frames == 1:
-            return [0]
-        return torch.linspace(0, dataset_len - 1, steps=num_frames).long().tolist()
-    if sampling == "random_fixed":
-        generator = torch.Generator().manual_seed(int(viz_cfg.get("seed", 42)))
-        return torch.randperm(dataset_len, generator=generator)[:num_frames].tolist()
-
-    raise ValueError(
-        "visualization.sampling must be 'uniform' or 'random_fixed', "
-        f"got {sampling!r}."
-    )
-
-
-def _collate_visualization_batch(dataset, viz_cfg):
-    indices = _visualization_indices(dataset, viz_cfg)
-    if not indices:
+def _collate_visualization_batch(dataset, num_frames=32):
+    num_frames = min(num_frames, len(dataset))
+    if num_frames <= 0:
         return None
+    if num_frames == 1:
+        indices = [0]
+    else:
+        indices = torch.linspace(0, len(dataset) - 1, steps=num_frames).long().tolist()
     samples = [dataset[int(idx)] for idx in indices]
     return torch.utils.data.default_collate(samples)
 
 
 @torch.no_grad()
-def _decoder_visualization_figures(heads, dataset, device, cfg):
+def _decoder_visualization_figures(heads, dataset, device):
     if not heads.decoders:
         return {}
 
-    viz_cfg = _visualization_cfg(cfg)
-    batch = _collate_visualization_batch(dataset, viz_cfg)
+    batch = _collate_visualization_batch(dataset)
     if batch is None:
         return {}
 
@@ -812,42 +606,9 @@ def _decoder_visualization_figures(heads, dataset, device, cfg):
     return payload
 
 
-def _decoder_visualizations(heads, dataset, device, cfg):
-    figures = _decoder_visualization_figures(heads, dataset, device, cfg)
-    if not figures:
-        return {}
-
-    import wandb
-
-    payload = {}
-    for key, fig in figures.items():
-        try:
-            payload[key] = wandb.Image(fig)
-        finally:
-            plt.close(fig)
-    return payload
-
-
-def _log_media(logger, wandb_run, payload: dict, step: int | None):
-    if not payload:
-        return
-    image_logger = _wandb_image_logger(logger, wandb_run)
-    if image_logger is None:
-        return
-    if step is None:
-        image_logger.log(payload)
-    else:
-        image_logger.log(payload, step=step)
-
-
 def _limit_batches(cfg, key: str) -> int | None:
     value = cfg.get(key, None)
-    if value is None:
-        return None
-    limit = int(value)
-    if limit <= 0:
-        raise ValueError(f"{key} must be positive when set, got {limit}.")
-    return limit
+    return None if value is None else int(value)
 
 
 def _train_one_epoch(
@@ -887,7 +648,6 @@ def _train_one_epoch(
 
     results = {key: _mean(values) for key, values in losses_by_batch.items()}
     results.update(_weighted_metric_means(metric_totals, metric_weights))
-    _add_distractor_aggregate(results)
     return results
 
 
@@ -923,7 +683,6 @@ def _evaluate(
 
     results = {key: _mean(values) for key, values in losses_by_batch.items()}
     results.update(_weighted_metric_means(metric_totals, metric_weights))
-    _add_distractor_aggregate(results)
     return results
 
 
@@ -1186,14 +945,9 @@ def _save_decoder_visualizations(
     heads,
     eval_datasets,
     device,
-    cfg,
 ) -> list[str]:
-    viz_cfg = _visualization_cfg(cfg)
-    eval_key, dataset = _representative_eval_dataset(eval_datasets, viz_cfg)
-    if dataset is None:
-        return []
-
-    figures = _decoder_visualization_figures(heads, dataset, device, cfg)
+    eval_key, dataset = next(iter(eval_datasets.items()))
+    figures = _decoder_visualization_figures(heads, dataset, device)
     if not figures:
         return []
 
@@ -1331,11 +1085,7 @@ def run_final_probing_decoding_eval(
     if model is None:
         if cfg.get("policy", None) in (None, "", "null"):
             raise ValueError("cfg.policy must be set when no in-memory model is provided.")
-        model, resolved_policy_path, train_cfg = _load_policy(
-            cfg.policy,
-            cache_dir,
-            cfg.get("policy_config_path", None),
-        )
+        model, resolved_policy_path, train_cfg = _load_policy(cfg.policy, cache_dir)
         policy_path = resolved_policy_path
     else:
         if train_cfg is None:
@@ -1411,13 +1161,10 @@ def run_final_probing_decoding_eval(
     if logger is None:
         wandb_run, wandb_config = _init_wandb(cfg, output_dir)
 
-    epochs = int(cfg.get("epochs", cfg.get("max_epochs", 1)))
-    if epochs <= 0:
-        raise ValueError("Final probing/decoding eval epochs must be positive.")
+    epochs = int(cfg.epochs)
 
     train_batch_limit = _limit_batches(cfg, "limit_train_batches")
     eval_batch_limit = _limit_batches(cfg, "limit_eval_batches")
-    viz_cfg = _visualization_cfg(cfg)
     final_metrics = {}
     eval_metrics_history = []
     for epoch in range(1, epochs + 1):
@@ -1455,23 +1202,6 @@ def run_final_probing_decoding_eval(
         )
         step = None if log_step is None else int(log_step) + epoch
         _log_metrics(logger, wandb_run, final_metrics, step)
-
-        viz_interval = int(viz_cfg.get("every_n_epochs", 1))
-        should_log_viz = (
-            bool(viz_cfg.get("enabled", True))
-            and viz_interval > 0
-            and epoch % viz_interval == 0
-            and _wandb_image_logger(logger, wandb_run) is not None
-        )
-        if should_log_viz:
-            _, viz_dataset = _representative_eval_dataset(eval_datasets, viz_cfg)
-            if viz_dataset is not None:
-                _log_media(
-                    logger,
-                    wandb_run,
-                    _decoder_visualizations(heads, viz_dataset, device, cfg),
-                    step,
-                )
 
         eval_mean_loss = final_metrics.get(
             f"{FINAL_PROBING_DECODING_EVAL_PREFIX}/eval_mean/loss",
@@ -1517,7 +1247,6 @@ def run_final_probing_decoding_eval(
             heads,
             eval_datasets,
             device,
-            cfg,
         )
         manifest_path = _save_artifacts(
             heads,
@@ -1566,10 +1295,7 @@ class FinalProbingDecodingEvalCallback(pl.Callback):
 
         trainer.strategy.barrier("final_probing_decoding_eval_start")
         if trainer.is_global_zero:
-            cfg = load_probing_config(
-                config_name=self.eval_cfg.get("config_name", None),
-                config_path=self.eval_cfg.get("config_path", None),
-            )
+            cfg = load_probing_config(self.eval_cfg.config_name)
             cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
             overrides = self.eval_cfg.get("overrides", None)
             if overrides is not None:

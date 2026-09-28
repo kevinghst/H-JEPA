@@ -240,10 +240,7 @@ def run(cfg):
     train_batch_limit_callback = TrainBatchLimitCallback(
         cfg.get("max_train_batches_total", None)
     )
-    final_probing_decoding_eval_cfg = cfg.get(
-        "final_probing_decoding_eval",
-        OmegaConf.create({"enabled": False, "config_name": None, "config_path": None}),
-    )
+    final_probing_decoding_eval_cfg = cfg.final_probing_decoding_eval
     final_probing_decoding_eval_callback = FinalProbingDecodingEvalCallback(
         eval_cfg=final_probing_decoding_eval_cfg,
         run_dir=run_dir,
@@ -271,7 +268,6 @@ def run(cfg):
                         input=probe_input,
                         name=name,
                         probe=build_prober(
-                            {},
                             input_dim=embed_dims[level],
                             output_dim=output_dim,
                         ),

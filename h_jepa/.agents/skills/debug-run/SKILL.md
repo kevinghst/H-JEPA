@@ -74,7 +74,6 @@ loader.persistent_workers=false
 +final_probing_decoding_eval.overrides.limit_train_batches=2
 +final_probing_decoding_eval.overrides.limit_eval_batches=1
 +final_probing_decoding_eval.overrides.loader.batch_size=8
-+final_probing_decoding_eval.overrides.num_workers=0
 +final_probing_decoding_eval.overrides.loader.num_workers=0
 +final_probing_decoding_eval.overrides.loader.persistent_workers=false
 +final_probing_decoding_eval.overrides.save_artifacts=false
@@ -100,16 +99,17 @@ the run unless it holds evidence for a failure.
 ## main_probing_decoding_eval.py
 
 ```bash
-output_dir=$(mktemp -d)/probing
+++output_dir=$(mktemp -d)/probing
 epochs=1
-limit_train_batches=2
-limit_eval_batches=1
+++limit_train_batches=2
+++limit_eval_batches=1
 loader.batch_size=8
-num_workers=0
 loader.num_workers=0
 loader.persistent_workers=false
-save_artifacts=false
+++save_artifacts=false
 ```
+
+(`output_dir`, `limit_*` and `save_artifacts` are not in the probing configs, hence `++`.)
 
 Keep every configured probe and decoder level; the point is to exercise the same heads.
 

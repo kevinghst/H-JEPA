@@ -1,12 +1,9 @@
 policy: null
-env: pusht
-description: post-hoc Push-T probing/decoding
 output_subdir: final_probing_decoding_eval
 seed: 42
 device: auto
 cache_dir: ${oc.env:STABLEWM_HOME}
 epochs: 25
-num_workers: 6
 loader:
   batch_size: 128
   num_workers: 6
@@ -16,12 +13,8 @@ loader:
   pin_memory: true
   shuffle: true
 optimizer:
-  type: AdamW
   lr: 0.001
   weight_decay: 0.0001
-  prober:
-    lr: 0.001
-    weight_decay: 0.0001
 decoder:
   depth: 4
   dim: 256
@@ -34,7 +27,6 @@ wandb:
     name: null
     id: null
     resume: allow
-probe_targets: null
 train_dataset:
   name: pusht_expert_train
   total_transitions: 250000
