@@ -211,13 +211,13 @@ as planning fields.
 eval.py
   └─ run_planning_eval
        └─ _build_policy
-            └─ _build_hierarchical_solver
+            └─ build_hierarchical_solver
                  └─ HierarchicalSolver
                       ├─ level_solvers[1]: GradientSolver  (fine, level-1 model)
                       └─ level_solvers[2]: GradientSolver  (coarse, level-2 model)
 ```
 
-Each level gets its own gradient-descent solver wrapped in a `_HierarchicalLevelModel` adapter. The adapter:
+Each level gets its own gradient-descent solver wrapped in a `LevelCostModel` adapter. The adapter:
 - Runs **rollout** in the level's own latent space (using `JEPA.rollout`).
 - Computes **state cost** in the *upper* level's space: it encodes the predicted level-N latents through level-(N+1)'s `JEPA.encode(..., chunk_temporal_inputs=True)` before comparing against the subgoal targets.
 - Optionally computes **action cost** in the upper level's action-embedding space, controlled by `hierarchical_plan_config.levelN.action_cost_weight` (default `0.0`).

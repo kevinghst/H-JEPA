@@ -410,7 +410,6 @@ class WorldModelPolicy(BasePolicy):
             print(f'policy call number: {self._policy_call_count}')
             outputs = self.solver(
                 info_dict,
-                init_action=None,
                 steps_taken=self._steps_taken,
                 eval_budget=self.eval_budget,
             )

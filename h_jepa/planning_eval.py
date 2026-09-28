@@ -20,7 +20,7 @@ from data import (
     load_normalizer_artifact,
 )
 from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
-from stable_worldmodel.solver.hierarchical_solver import HierarchicalSolver, _build_hierarchical_solver
+from stable_worldmodel.solver.hierarchical_solver import build_hierarchical_solver
 from utils import resolve_model_checkpoint_path
 
 
@@ -250,11 +250,11 @@ def _build_policy(
     model.interpolate_pos_encoding = True
 
     if _is_hierarchical_solver(cfg):
-        _drop_levels_above_model(cfg, len(HierarchicalSolver._extract_level_models(model)))
+        _drop_levels_above_model(cfg, model.num_levels)
     policy_config = _build_policy_plan_config(cfg)
 
     if _is_hierarchical_solver(cfg):
-        solver = _build_hierarchical_solver(cfg, model)
+        solver = build_hierarchical_solver(cfg, model)
     else:
         solver = hydra.utils.instantiate(cfg.solver, model=model)
 
