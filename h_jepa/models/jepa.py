@@ -121,8 +121,8 @@ class JEPA(nn.Module):
         self,
         encoder,
         predictor,
-        action_encoder,
-        action_pooler=None,
+        action_embed,
+        action_encoder=None,
         level:int=1,
         action_queue_size: int = 0,
         temporal_stride: int = 1,
@@ -133,8 +133,8 @@ class JEPA(nn.Module):
 
         self.encoder = encoder
         self.predictor = predictor
-        self.action_encoder = action_encoder
-        self.action_pooler = action_pooler or nn.Identity()
+        self.action_embed = action_embed
+        self.action_encoder = action_encoder or nn.Identity()
         self.level = level
         self.temporal_stride = int(temporal_stride)
         self.temporal_window_size = int(temporal_window_size)
@@ -146,6 +146,11 @@ class JEPA(nn.Module):
         # rename and carry the attribute under its old name.
         if "temporal_kernel_size" in state and "temporal_window_size" not in state:
             state["temporal_window_size"] = state.pop("temporal_kernel_size")
+        # The paper checkpoints were pickled before the action_encoder->action_embed and
+        # action_pooler->action_encoder rename.
+        if "action_pooler" in state["_modules"]:
+            renamed = {"action_encoder": "action_embed", "action_pooler": "action_encoder"}
+            state["_modules"] = {renamed.get(k, k): v for k, v in state["_modules"].items()}
         self.__dict__.update(state)
 
     def _state_windows(
@@ -280,15 +285,15 @@ class JEPA(nn.Module):
             self._buffers["latent_action_queue"] = saved.new_empty(saved.shape)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def _update_latent_action_queue(self, pooled_actions: torch.Tensor) -> None:
-        """pooled_actions: (B, T, A_emb)"""
+    def _update_latent_action_queue(self, latent_actions: torch.Tensor) -> None:
+        """latent_actions: (B, T, A_emb)"""
 
         if not self.training or self.action_queue_size <= 0:
             return
 
-        assert pooled_actions.ndim == 3, "pooled_actions must be (B, T, A_emb)"
+        assert latent_actions.ndim == 3, "latent_actions must be (B, T, A_emb)"
 
-        samples = pooled_actions[:, 0].detach()
+        samples = latent_actions[:, 0].detach()
 
         queue = self.latent_action_queue
         queue_size = int(self.action_queue_size)
@@ -349,16 +354,13 @@ class JEPA(nn.Module):
             )
 
         if "action" in info:
-            action_pooler = getattr(self, "action_pooler", None)
-            if action_pooler is None:
-                action_pooler = nn.Identity()
             action_mask = info.get("action_mask")
             if action_mask is None:
-                pooled_actions = action_pooler(info["action"])
+                latent_actions = self.action_encoder(info["action"])
             else:
-                pooled_actions = action_pooler(info["action"], action_mask)
-            self._update_latent_action_queue(pooled_actions)
-            info["action_0"] = self.action_encoder(pooled_actions)
+                latent_actions = self.action_encoder(info["action"], action_mask)
+            self._update_latent_action_queue(latent_actions)
+            info["action_0"] = self.action_embed(latent_actions)
 
         return info
 
@@ -391,7 +393,7 @@ class JEPA(nn.Module):
 
         HS = history_size
         for t in range(n_steps):
-            act_emb = self.action_encoder(act)
+            act_emb = self.action_embed(act)
             emb_trunc = emb[:, -HS:]  # (BS, HS, D)
             act_trunc = act_emb[:, -HS:]  # (BS, HS, A_emb)
             pred_emb = self.predict(emb_trunc, act_trunc)[:, -1:]  # (BS, 1, D)
@@ -401,7 +403,7 @@ class JEPA(nn.Module):
             act = torch.cat([act, next_act], dim=1)  # (BS, T+1, action_dim)
 
         # predict the last state
-        act_emb = self.action_encoder(act)  # (BS, T, A_emb)
+        act_emb = self.action_embed(act)  # (BS, T, A_emb)
         emb_trunc = emb[:, -HS:]  # (BS, HS, D)
         act_trunc = act_emb[:, -HS:]  # (BS, HS, A_emb)
         pred_emb = self.predict(emb_trunc, act_trunc)[:, -1:]  # (BS, 1, D)

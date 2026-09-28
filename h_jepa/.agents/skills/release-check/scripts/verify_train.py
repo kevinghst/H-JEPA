@@ -27,10 +27,20 @@ REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|de
            r"data\.dataset\.(random_waypoints|augment_static_window_prob|precompute_levels)$",
            r"data\.dataset\.level\d+\.(load|sample_range_low|sample_range_high)$",
            r"(encoder_resnet9|projector_loss_weight|train_value_function)$", r"optimizer\.decoder\..*",
-           r"(local_cache_dir|train_split)$", r"level\d+\.encoder\.residual$", r"level\d+\.action_pooler\.uniform_input$",
+           r"(local_cache_dir|train_split)$", r"level\d+\.encoder\.residual$", r"level\d+\.action_encoder\.uniform_input$",
            r"level\d+\.wm\.(xy|qpos|qvel|observation|state|block_pos|block_ori|block_xy|agent_xy|agent_vel|effector_pos|"
            r"effector_yaw|gripper|arm_joint_pos|arm_joint_vel|gripper_vel|distractor0_xy|min_distractor_dist)_dim$",
            r"level([2-9])\.wm\.action_dim$", r"level\d+\.wm\.proprio_dim$"]
+
+
+def rename_action_keys(cfg):
+    # The paper runs predate the action_encoder->action_embed, action_pooler->action_encoder rename
+    # (queue_size moved from the old action_encoder to the new one).
+    out = {}
+    for k, v in cfg.items():
+        k = re.sub(r"\.action_encoder\.(?!queue_size$)", ".action_embed.", k).replace(".action_pooler.", ".action_encoder.")
+        out[k] = v.replace(".action_pooler.", ".action_encoder.") if isinstance(v, str) else v
+    return out
 
 
 def main():
@@ -43,7 +53,7 @@ def main():
                 for seed in args.seeds:
                     cfg = compose(config_name=f"{env}_{model}", overrides=[f"seed={seed}"])
                     A = flat(OmegaConf.to_container(cfg, resolve=False))
-                    B = flat(yaml.safe_load(open(ROOT + path.format(s=seed) + "/config.yaml")))
+                    B = rename_action_keys(flat(yaml.safe_load(open(ROOT + path.format(s=seed) + "/config.yaml"))))
                     diffs = [(k, A.get(k, "<none>"), B.get(k, "<none>")) for k in sorted(set(A) | set(B))
                              if not k.startswith(IGNORED) and not any(re.fullmatch(p, k) for p in REMOVED)
                              and str(A.get(k, "<none>")) != str(B.get(k, "<none>"))]

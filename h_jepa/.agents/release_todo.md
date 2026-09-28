@@ -146,7 +146,7 @@ Round 4
 ## Kept on purpose
 
 - latent action queue (queue_size): GradientSolver's upper-level action prior and clipping.
-- action_encoder.patch_embed: level 1 uses the Embedder default (True); levels 2+ set false.
+- action_embed.patch_embed: level 1 uses the Embedder default (True); levels 2+ set false.
 - window_size > 1 in training and planning (unused by the paper, 1 everywhere, but must keep
   working): `JEPA._state_windows` / `_action_windows` / `_chunk_temporal_info` and the
   `temporal_window_size` attribute, `HJEPA._level_geometry` sparse level-1 encode, the dataset span
@@ -159,6 +159,10 @@ Round 4
   request).
 - `JEPA.__setstate__` `temporal_kernel_size` -> `temporal_window_size` shim: the four LeWM paper
   checkpoints (level 1, all seeds) still carry the old attribute (the audit wrongly listed it as unused).
+- `JEPA.__setstate__` action-module shim: modules were renamed on 2026-09-28 (`action_encoder` ->
+  `action_embed`, `action_pooler` -> `action_encoder`; `queue_size` moved to the new
+  `action_encoder` config block), and all paper checkpoints pickle the old names.
+  `verify_train.py` maps the paper configs' old keys the same way.
 - `CLSDecoder` in `models.module`: 3 paper checkpoints pickle it (probing also uses it).
 - callables `in_dataset: false` args (Cube's constant `cube_id: 0`; the audit wrongly listed it as
   unused).
@@ -195,7 +199,6 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
 ### Safe dead code: planning
 - [ ] `World.evaluate`.
 - [ ] `num_subgoals` > 1 in hierarchical planning (1 everywhere).
-- [x] `gd.py`: `_rollout_final_actions` for the flat solver (medium).
 - [x] `policy.py`: fold `AutoCostModel` / `_load_model_with_attribute` into the hierarchical load
   path (medium).
 
@@ -237,7 +240,6 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
 - [ ] Never imported: `tabulate`, `gdown`, `typer`, `minigrid`, `stable_baselines3`,
   `hydra-submitit-launcher` (+ `shapely` after the helper goes).
 - [ ] Dev-only: `decord`, `mkdocs*`, `twine`, `pytest-cov`.
-- [ ] Imported but undeclared: `scikit-learn`, `matplotlib`, possibly `imageio` (check transitive).
 
 ### Open (your call)
 - [ ] Keep `planning_compute.json` + `_collect_solve_records` / `solve_records` (lets the
@@ -245,7 +247,4 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
 - [ ] Other diagnostic planning outputs: `seeds`, `wall_clock_to_success`,
   `loaded_eval_original_lengths`, `steps_to_success[_success_only]`.
 - [ ] Merge `FourRoomEnv` into `FourRoomDistractorsEnv` (cosmetic).
-- [ ] Final probing/decoding rejects window_size != 1 (`_validate_dense_assumptions`), so a
-  window_size > 1 training run raises after its planning eval unless
-  `final_probing_decoding_eval.enabled=false`. Support it, or document it?
 

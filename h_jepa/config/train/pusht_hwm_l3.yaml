@@ -46,14 +46,14 @@ level2:
     input_dim: ${level1.wm.embed_dim}
     projector:
       type: identity
-  action_pooler:
+  action_encoder:
     output_dim: 4
     input_dim: ${level1.wm.embed_dim}
     max_chunk: ${eval:'${data.dataset.level2.frameskip} + 1'}
-  action_encoder:
-    patch_embed: false
-    input_dim: ${level2.action_pooler.output_dim}
     queue_size: 4000
+  action_embed:
+    patch_embed: false
+    input_dim: ${level2.action_encoder.output_dim}
   predictor:
     depth: 6
     heads: 16
@@ -84,14 +84,14 @@ level3:
     input_dim: ${level2.wm.embed_dim}
     projector:
       type: identity
-  action_pooler:
+  action_encoder:
     output_dim: 4
     input_dim: ${level2.wm.embed_dim}
     max_chunk: ${eval:'${data.dataset.level3.frameskip} + 1'}
-  action_encoder:
-    patch_embed: false
-    input_dim: ${level3.action_pooler.output_dim}
     queue_size: 4000
+  action_embed:
+    patch_embed: false
+    input_dim: ${level3.action_encoder.output_dim}
   predictor:
     depth: 6
     heads: 16

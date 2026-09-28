@@ -126,7 +126,7 @@ class _HierarchicalLevelModel(nn.Module):
         count = (
             max(0, window_size - int(state_len)) if dense else window_size - 1
         )
-        action_emb = self.model.action_encoder(action_candidates)
+        action_emb = self.model.action_embed(action_candidates)
         action_emb = self._prefix_zeros(action_emb, count)
         return self._pad_zeros_to_length(action_emb, target_len)
 
@@ -166,9 +166,9 @@ class _HierarchicalLevelModel(nn.Module):
 
         action_mask = chunked.get("action_mask")
         if action_mask is None:
-            pooled = self.upper_model.action_pooler(chunked["action"])
+            pooled = self.upper_model.action_encoder(chunked["action"])
         else:
-            pooled = self.upper_model.action_pooler(chunked["action"], action_mask)
+            pooled = self.upper_model.action_encoder(chunked["action"], action_mask)
 
         # The final pooled action points beyond the final encoded upper state.
         return self._restore_samples(pooled, sample_shape)[..., :-1, :]

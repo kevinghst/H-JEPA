@@ -410,8 +410,8 @@ def create_world_model(cfg):
     for level in range(1, int(cfg.num_levels) + 1):
         level_name = f"level{level}"
         level_cfg = cfg[level_name]
-        action_encoder_cfg = level_cfg.get("action_encoder", {})
-        queue_size = int(action_encoder_cfg.get("queue_size", 0))
+        action_embed_cfg = level_cfg.get("action_embed", {})
+        queue_size = int(level_cfg.get("action_encoder", {}).get("queue_size", 0))
         temporal_stride = int(level_cfg.get("stride", 1))
         temporal_window_size = int(level_cfg.get("window_size", 1))
         rollout_n = int(level_cfg.wm.get("rollout_n", 1))
@@ -521,32 +521,32 @@ def create_world_model(cfg):
             ),
         )
 
-        action_pooler = None
-        if "action_pooler" in level_cfg:
-            action_pooler_kwargs = {k: v for k, v in level_cfg.action_pooler.items()}
-            action_pooler_type = str(
-                action_pooler_kwargs.pop("type", "sequence")
+        action_encoder = None
+        if "action_encoder" in level_cfg:
+            action_encoder_kwargs = {k: v for k, v in level_cfg.action_encoder.items()}
+            action_encoder_kwargs.pop("queue_size", None)
+            action_encoder_type = str(
+                action_encoder_kwargs.pop("type", "sequence")
             ).lower()
-            if action_pooler_type == "sequence":
-                action_pooler = SequenceEncoder(**action_pooler_kwargs)
+            if action_encoder_type == "sequence":
+                action_encoder = SequenceEncoder(**action_encoder_kwargs)
             else:
                 raise ValueError(
-                    f"Unsupported action_pooler type {action_pooler_type!r}"
+                    f"Unsupported action_encoder type {action_encoder_type!r}"
                 )
 
-        action_encoder_kwargs = {k: v for k, v in action_encoder_cfg.items()}
-        action_encoder_kwargs.pop("queue_size", None)
+        action_embed_kwargs = {k: v for k, v in action_embed_cfg.items()}
         if level == 1:
             effective_act_dim = cfg.data.dataset.level1.frameskip * cfg.level1.wm.action_dim
-            action_encoder_kwargs["input_dim"] = effective_act_dim
-        action_encoder_kwargs["emb_dim"] = embed_dim
-        action_encoder = Embedder(**action_encoder_kwargs)
+            action_embed_kwargs["input_dim"] = effective_act_dim
+        action_embed_kwargs["emb_dim"] = embed_dim
+        action_embed = Embedder(**action_embed_kwargs)
 
         jepa = JEPA(
             encoder=encoder,
             predictor=predictor,
+            action_embed=action_embed,
             action_encoder=action_encoder,
-            action_pooler=action_pooler,
             level=level,
             action_queue_size=queue_size,
             temporal_stride=temporal_stride,

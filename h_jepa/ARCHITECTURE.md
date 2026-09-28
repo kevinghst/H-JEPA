@@ -60,7 +60,7 @@ action_N : (B, T, A)
 
 **Action stacking (level 1)**: because the dataset skips 5 real steps between observations, the `frameskip` actions taken in between are concatenated, so the level-1 action vector has dimension `frameskip × raw_action_dim`.
 
-**Action pooling (level 2+)**: an `action_pooler` (a small sequence encoder) compresses a chunk of lower-level action embeddings into a fixed-size vector. In model-side chunking, action chunks have length `levelN.stride`, independent of `levelN.window_size`.
+**Action encoding (level 2+)**: an `action_encoder` (a small sequence encoder) compresses a chunk of lower-level action embeddings into a fixed-size latent action, the macro-action the level's planner optimizes. In model-side chunking, action chunks have length `levelN.stride`, independent of `levelN.window_size`.
 
 **Non-pixel columns** are z-score normalized using per-column mean/std computed on the training set.
 
@@ -76,8 +76,8 @@ action_N : (B, T, A)
   - Level 1 without proprio: ViT applied to raw pixels → CLS token → `encoder.projector` → `embed_dim`.
   - Level 1 with proprio: `encoder.pixel_encoder` maps pixels to `pixel_embed`, `encoder.proprio_encoder` maps proprio to `proprio_embed`, then `encoder.projector(concat(pixel_embed, proprio_embed))` produces `embed`.
   - Level 2+: a latent encoder applied to lower-level embeddings. With `window_size=1`, this can be a pointwise latent MLP. With `window_size>1`, it can be a sequence encoder that pools a lower-level temporal window into one abstract embedding. If proprio is enabled at that level, the pixel/proprio streams consume `pixel_embed_{level-1}` and `proprio_embed_{level-1}`.
-- **Action Encoder**: small MLP that maps actions → action embedding.
-- **Action Pooler** (level 2+): sequence encoder compressing a chunk of level-1 action embeddings into one vector.
+- **Action Encoder** (level 2+; identity at level 1): sequence encoder compressing a chunk of lower-level action embeddings into one latent action.
+- **Action Embed**: small MLP that maps the level's actions (raw action blocks at level 1, latent actions above) → the predictor's action embedding.
 - **Predictor**: `ProjectedPredictor`, where the base `ARPredictor` Transformer predicts in its hidden output space and `predictor.projector` maps the result to `embed_dim`.
 
 ### How the hierarchy is defined
@@ -326,8 +326,8 @@ hierarchical_plan_config:
     action_cost_weight: 0.0
 ```
 
-When enabled, level-N candidate actions are first encoded with level N's
-`action_encoder`, then pooled by level N+1's `action_pooler`, and this pooled
+When enabled, level-N candidate actions are first embedded with level N's
+`action_embed`, then encoded by level N+1's `action_encoder`, and this pooled
 macro-action is compared directly against the upper solver's optimized
 macro-action.
 
@@ -336,8 +336,8 @@ For `stride=3`, `window_size=1`:
 ```
 upper plan actions : A0, A1
 lower actions      : a0, a1, a2, a3, a4, a5
-pooled action cost : mse(A0, pool_upper(enc_lower(a0:a2)))
-                   + mse(A1, pool_upper(enc_lower(a3:a5)))
+pooled action cost : mse(A0, enc_upper(embed_lower(a0:a2)))
+                   + mse(A1, enc_upper(embed_lower(a3:a5)))
 ```
 
 For `window_size>1`, action embeddings are padded at the front to stay aligned
