@@ -18,218 +18,20 @@ from .solver import (
 )
 
 
-class LevelCostModel(nn.Module):
-    """Adapter that keeps rollout in local space and computes cost in parent space.
-
-    For non-top levels, predicted latents are first encoded with the JEPA encoder
-    from the level above before comparing against ``goal_embed_0``. When the goal
-    lives more than one level up (every level in between was skipped at horizon 1
-    with ``horizon_one_goal_cost_space='upper'``), the encoders are chained level
-    by level up to ``goal_embed_0_level``.
-    """
-
-    def __init__(
-        self,
-        model: Any,
-        upper_models: list[Any],
-    ) -> None:
-        super().__init__()
-        self.model = model
-        self.upper_models = upper_models
-        self.level = self.model.level
-
-    def rollout(self, info_dict: dict, action_candidates: torch.Tensor) -> dict:
-        return self.model.rollout(info_dict, action_candidates)
-
-    def get_latent_action_queue(self) -> torch.Tensor | None:
-        """Forward latent-action queue access to the wrapped level model."""
-        return self.model.get_latent_action_queue()
-
-    @staticmethod
-    def _prefix_repeat_first(x: torch.Tensor, count: int) -> torch.Tensor:
-        if count <= 0:
-            return x
-
-        prefix_shape = (*x.shape[:-2], count, x.shape[-1])
-        prefix = x[..., :1, :].expand(prefix_shape)
-        return torch.cat([prefix, x], dim=-2)
-
-    @staticmethod
-    def _prefix_zeros(x: torch.Tensor, count: int) -> torch.Tensor:
-        if count <= 0:
-            return x
-
-        prefix = x.new_zeros(*x.shape[:-2], count, x.shape[-1])
-        return torch.cat([prefix, x], dim=-2)
-
-    @staticmethod
-    def _pad_zeros_to_length(x: torch.Tensor, target_len: int) -> torch.Tensor:
-        pad_len = target_len - x.shape[-2]
-        if pad_len == 0:
-            return x
-
-        suffix = x.new_zeros(*x.shape[:-2], pad_len, x.shape[-1])
-        return torch.cat([x, suffix], dim=-2)
-
-    def _prepare_upper_state_stream(
-        self, pred_emb: torch.Tensor, *, dense: bool = False
-    ) -> torch.Tensor:
-        # Non-dense (real-stride rollout): causal windows -> front-pad by kernel-1.
-        # Dense (stride-1 goal projection): pad only enough to form one full window
-        # when the stream is shorter than the kernel, then slide -> num windows =
-        # max(1, N - kernel + 1). Both reduce to zero padding at window_size=1, so
-        # a window_size=1 model is bit-identical to the pre-existing behavior.
-        window_size = self.upper_models[0].temporal_window_size
-        count = (
-            max(0, window_size - pred_emb.shape[-2]) if dense else window_size - 1
+def build_hierarchical_solver(cfg: Any, model: Any) -> "HierarchicalSolver":
+    """Build one GradientSolver per level from cfg.solver.solvers.levelN."""
+    level_models = [model.get_level(level) for level in range(1, model.num_levels + 1)]
+    level_solvers = {}
+    for level, level_model in enumerate(level_models, start=1):
+        adapted_model = LevelCostModel(
+            model=level_model,
+            upper_models=level_models[level:],
         )
-        return self._prefix_repeat_first(pred_emb, count)
-
-    def _prepare_upper_action_stream(
-        self,
-        action_candidates: torch.Tensor,
-        *,
-        target_len: int,
-        dense: bool = False,
-        state_len: int | None = None,
-    ) -> torch.Tensor:
-        # Mirror the state-stream front-pad (see _prepare_upper_state_stream) so
-        # actions stay aligned to the upper states; actions pad with zeros.
-        window_size = self.upper_models[0].temporal_window_size
-        count = max(0, window_size - state_len) if dense else window_size - 1
-        action_emb = self.model.action_embed(action_candidates)
-        action_emb = self._prefix_zeros(action_emb, count)
-        return self._pad_zeros_to_length(action_emb, target_len)
-
-    def _project_actions_with_upper(
-        self,
-        prepared_pred: torch.Tensor,
-        action_candidates: torch.Tensor,
-        *,
-        temporal_stride: int | None = None,
-        dense: bool = False,
-        state_len: int | None = None,
-    ) -> torch.Tensor:
-        upper_model = self.upper_models[0]
-        input_key = f'embed_{self.level}'
-        b, s = prepared_pred.shape[:2]
-        prepared_action = self._prepare_upper_action_stream(
-            action_candidates,
-            target_len=prepared_pred.shape[-2],
-            dense=dense,
-            state_len=state_len,
-        )
-        chunked = upper_model._chunk_temporal_info(
-            {input_key: prepared_pred.flatten(0, 1), "action": prepared_action.flatten(0, 1)},
-            key=input_key,
-            stride=upper_model.temporal_stride if temporal_stride is None else temporal_stride,
-            window_size=upper_model.temporal_window_size,
-        )
-        pooled = upper_model.action_encoder(chunked["action"], chunked["action_mask"])
-
-        # The final pooled action points beyond the final encoded upper state.
-        return pooled.unflatten(0, (b, s))[..., :-1, :]
-
-    def _project_to_goal_space(
-        self,
-        pred_emb: torch.Tensor,
-        action_candidates: torch.Tensor | None = None,
-        *,
-        use_upper_space: bool,
-        dense_upper_goal_projection: bool,
-        goal_level: int,
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Encode predicted embeddings through the upper-level JEPA encoder(s)."""
-        if not self.upper_models or not use_upper_space:
-            return pred_emb, None
-
-        temporal_stride = None
-        if dense_upper_goal_projection:
-            # Encode the level-1 prediction stream into the upper space at stride 1
-            # (one upper latent per sliding kernel-window) to score every predicted
-            # step against the upper goal. Windowed prep supports window_size > 1.
-            temporal_stride = 1
-
-        prepared_pred = self._prepare_upper_state_stream(
-            pred_emb, dense=bool(dense_upper_goal_projection)
-        )
-        b, s = prepared_pred.shape[:2]
-        input_key = f'embed_{self.level}'
-        upper_out = self.upper_models[0].encode(
-            {input_key: prepared_pred.flatten(0, 1)},
-            key=input_key,
-            chunk_temporal_inputs=True,
-            temporal_stride=temporal_stride,
-        )
-        # Chain the dense (stride-1) output stream through each further level.
-        for upper_level in range(self.level + 2, goal_level + 1):
-            input_key = f'embed_{upper_level - 1}'
-            upper_out = self.upper_models[upper_level - self.level - 1].encode(
-                {input_key: upper_out['embed_0']},
-                key=input_key,
-                chunk_temporal_inputs=True,
-                temporal_stride=temporal_stride,
-            )
-
-        pred_for_cost = upper_out["embed_0"].unflatten(0, (b, s))
-        action_for_cost = None
-        if action_candidates is not None:
-            action_for_cost = self._project_actions_with_upper(
-                prepared_pred,
-                action_candidates,
-                temporal_stride=temporal_stride,
-                dense=bool(dense_upper_goal_projection),
-                state_len=pred_emb.shape[-2],
-            )
-
-        return pred_for_cost, action_for_cost
-
-    def _action_cost(
-        self,
-        pred_action: torch.Tensor | None,
-        info_dict: dict,
-    ) -> torch.Tensor | None:
-        target_action = info_dict.get("goal_action")
-        if pred_action is None or target_action is None:
-            return None
-
-        cost_last_n = max(1, int(info_dict.get("cost_last_n", 1)))
-        cost_window = min(cost_last_n, pred_action.shape[-2], target_action.shape[-2])
-        pred_action = pred_action[..., -cost_window:, :]
-        target_action = target_action[..., -cost_window:, :].expand_as(pred_action)
-
-        cost = F.mse_loss(
-            pred_action,
-            target_action.detach(),
-            reduction="none",
-        )
-        return cost.sum(dim=tuple(range(2, cost.ndim)))
-
-    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor) -> torch.Tensor:
-        info_dict = self.rollout(info_dict, action_candidates)
-
-        pred_emb = info_dict["predicted_embed_0"]
-        use_upper_space = bool(info_dict.get('goal_embed_0_in_upper_space', True))
-        goal_level = int(info_dict.get('goal_embed_0_level', self.level + 1))
-        action_weight = float(info_dict.get("action_cost_weight", 0.0))
-        pred_for_cost, action_for_cost = self._project_to_goal_space(
-            pred_emb,
-            action_candidates if action_weight != 0.0 else None,
-            use_upper_space=use_upper_space,
-            dense_upper_goal_projection=bool(
-                info_dict.get("dense_upper_goal_projection", False)
-            ),
-            goal_level=goal_level,
+        level_solvers[level] = hydra.utils.instantiate(
+            cfg.solver.solvers[f'level{level}'], model=adapted_model
         )
 
-        cost_info = dict(info_dict)
-        cost_info["predicted_embed_0"] = pred_for_cost
-        cost = self.model.criterion(cost_info)
-        if action_weight != 0.0:
-            action_cost = self._action_cost(action_for_cost, cost_info)
-            if action_cost is not None:
-                cost = cost + action_weight * action_cost
-        return cost
+    return HierarchicalSolver(level_solvers=level_solvers, level_models=level_models)
 
 
 class HierarchicalSolver:
@@ -266,68 +68,6 @@ class HierarchicalSolver:
                 level=level,
             )
 
-    def _level_plan_config(self, level: int) -> Any:
-        """Return planning config for a specific hierarchy level."""
-        return getattr(self._config, f'level{level}')
-
-    def _replanning_interval(self) -> int:
-        """Return the environment-step interval between solver calls."""
-        return int(self._config.receding_horizon) * int(
-            self._level_plan_config(1).action_block
-        )
-
-    def _pre_decay_horizon(self, level: int, *, fallback: int) -> int:
-        level_cfg = self._level_plan_config(level)
-        configured = getattr(level_cfg, 'pre_decay_horizon', None)
-        if configured is None:
-            configured = getattr(self.level_models[level], 'temporal_stride', fallback)
-
-        horizon = int(configured)
-        if horizon <= 0:
-            raise ValueError(
-                f'pre_decay_horizon must be positive for level {level}, got {horizon}.'
-            )
-        return horizon
-
-    def _horizon_schedules(
-        self,
-        *,
-        eval_budget: int,
-    ) -> dict[int, list[int]]:
-        """Build recursive per-level horizon schedules for one evaluation."""
-        calls = num_planning_calls(
-            eval_budget=int(eval_budget),
-            replanning_interval=self._replanning_interval(),
-        )
-        schedules: dict[int, list[int]] = {}
-        highest_level = len(self.level_models)
-
-        for level in range(highest_level, 0, -1):
-            level_cfg = self._level_plan_config(level)
-            horizon = level_cfg.horizon
-            if level == highest_level:
-                schedules[level] = decreasing_horizon_schedule(
-                    num_calls=calls,
-                    configured_horizon=horizon,
-                )
-                continue
-
-            upper_schedule = schedules[level + 1]
-            pre_decay_horizon = self._pre_decay_horizon(level, fallback=horizon)
-            try:
-                tail_start = upper_schedule.index(1)
-            except ValueError:
-                schedules[level] = [pre_decay_horizon] * calls
-                continue
-
-            tail = decreasing_horizon_schedule(
-                num_calls=calls - tail_start,
-                configured_horizon=horizon,
-            )
-            schedules[level] = [pre_decay_horizon] * tail_start + tail
-
-        return schedules
-
     @property
     def n_envs(self) -> int:
         """Number of parallel environments."""
@@ -346,97 +86,6 @@ class HierarchicalSolver:
     def __call__(self, *args: Any, **kwargs: Any) -> dict:
         """Make solver callable, forwarding to solve()."""
         return self.solve(*args, **kwargs)
-
-    @staticmethod
-    def _level_input_key(level: int) -> str:
-        return 'pixels' if level == 1 else f'embed_{level - 1}'
-
-    @staticmethod
-    def _latest_context_window(x: torch.Tensor, window_size: int) -> torch.Tensor:
-        if x.shape[1] >= window_size:
-            return x[:, -window_size:]
-
-        prefix = x[:, :1].expand(-1, window_size - x.shape[1], *x.shape[2:])
-        return torch.cat([prefix, x], dim=1)
-
-    def _encode_all_levels(
-        self,
-        info_dict: dict,
-        key: str = 'pixels',
-    ) -> dict[str, torch.Tensor]:
-        """Encode one pixel-like stream through all hierarchy levels.
-
-        Returns a dict with HJEPA-style keys: embed_1..embed_N.
-        Actions are intentionally ignored.
-        """
-        encoded = self._level1_encode_info(info_dict, key)
-        if encoded.get('pixels') is None:
-            raise KeyError(f"Missing '{key}' key in info_dict for hierarchical planning.")
-
-        goal_pixels = encoded['pixels']
-        if not torch.is_tensor(goal_pixels):
-            goal_pixels = torch.as_tensor(goal_pixels)
-
-        model_device = next(self.level_models[0].parameters()).device
-        goal_pixels = goal_pixels.to(model_device)
-
-        # Match JEPA get_cost behavior if a sample axis is present.
-        if goal_pixels.ndim >= 6:
-            goal_pixels = goal_pixels[:, 0]
-
-        encoded['pixels'] = goal_pixels
-        for info_key, value in list(encoded.items()):
-            if info_key == 'pixels':
-                continue
-            if not torch.is_tensor(value):
-                value = torch.as_tensor(value)
-            value = value.to(model_device)
-            if value.ndim >= 4:
-                value = value[:, 0]
-            encoded[info_key] = value
-
-        outputs: dict[str, torch.Tensor] = {}
-
-        # These observation/goal embeddings are fixed conditioning inputs for planning.
-        # Detach them so repeated GD steps do not try to backprop through the same
-        # encoder graph multiple times.
-        with torch.no_grad():
-            for level in range(1, len(self.level_models) + 1):
-                jepa = self.level_models[level - 1]
-                input_key = self._level_input_key(level)
-                if input_key not in encoded:
-                    raise KeyError(
-                        f"Missing '{input_key}' for level {level} encoding."
-                    )
-
-                if level > 1:
-                    encoded[input_key] = self._latest_context_window(
-                        encoded[input_key],
-                        jepa.temporal_window_size,
-                    )
-
-                level_out = jepa.encode(
-                    encoded,
-                    key=input_key,
-                    chunk_temporal_inputs=level > 1,
-                )
-
-                encoded[f'embed_{level}'] = level_out['embed_0']
-                outputs[f'embed_{level}'] = level_out['embed_0'][:, -1:].detach()
-
-        return outputs
-
-    def _level1_encode_info(self, info_dict: dict, key: str) -> dict[str, Any]:
-        if key == 'goal':
-            encoded = {'pixels': info_dict.get('goal')}
-            if 'goal_proprio' in info_dict:
-                encoded['proprio'] = info_dict['goal_proprio']
-        else:
-            encoded = {'pixels': info_dict.get(key)}
-            if 'proprio' in info_dict:
-                encoded['proprio'] = info_dict['proprio']
-
-        return encoded
 
     def solve(
         self,
@@ -562,18 +211,369 @@ class HierarchicalSolver:
 
         return {'actions': result['actions']}
 
+    def _level_plan_config(self, level: int) -> Any:
+        """Return planning config for a specific hierarchy level."""
+        return getattr(self._config, f'level{level}')
 
-def build_hierarchical_solver(cfg: Any, model: Any) -> HierarchicalSolver:
-    """Build one GradientSolver per level from cfg.solver.solvers.levelN."""
-    level_models = [model.get_level(level) for level in range(1, model.num_levels + 1)]
-    level_solvers = {}
-    for level, level_model in enumerate(level_models, start=1):
-        adapted_model = LevelCostModel(
-            model=level_model,
-            upper_models=level_models[level:],
-        )
-        level_solvers[level] = hydra.utils.instantiate(
-            cfg.solver.solvers[f'level{level}'], model=adapted_model
+    def _replanning_interval(self) -> int:
+        """Return the environment-step interval between solver calls."""
+        return int(self._config.receding_horizon) * int(
+            self._level_plan_config(1).action_block
         )
 
-    return HierarchicalSolver(level_solvers=level_solvers, level_models=level_models)
+    def _pre_decay_horizon(self, level: int, *, fallback: int) -> int:
+        level_cfg = self._level_plan_config(level)
+        configured = getattr(level_cfg, 'pre_decay_horizon', None)
+        if configured is None:
+            configured = getattr(self.level_models[level], 'temporal_stride', fallback)
+
+        horizon = int(configured)
+        if horizon <= 0:
+            raise ValueError(
+                f'pre_decay_horizon must be positive for level {level}, got {horizon}.'
+            )
+        return horizon
+
+    def _horizon_schedules(
+        self,
+        *,
+        eval_budget: int,
+    ) -> dict[int, list[int]]:
+        """Build recursive per-level horizon schedules for one evaluation."""
+        calls = num_planning_calls(
+            eval_budget=int(eval_budget),
+            replanning_interval=self._replanning_interval(),
+        )
+        schedules: dict[int, list[int]] = {}
+        highest_level = len(self.level_models)
+
+        for level in range(highest_level, 0, -1):
+            level_cfg = self._level_plan_config(level)
+            horizon = level_cfg.horizon
+            if level == highest_level:
+                schedules[level] = decreasing_horizon_schedule(
+                    num_calls=calls,
+                    configured_horizon=horizon,
+                )
+                continue
+
+            upper_schedule = schedules[level + 1]
+            pre_decay_horizon = self._pre_decay_horizon(level, fallback=horizon)
+            try:
+                tail_start = upper_schedule.index(1)
+            except ValueError:
+                schedules[level] = [pre_decay_horizon] * calls
+                continue
+
+            tail = decreasing_horizon_schedule(
+                num_calls=calls - tail_start,
+                configured_horizon=horizon,
+            )
+            schedules[level] = [pre_decay_horizon] * tail_start + tail
+
+        return schedules
+
+    def _encode_all_levels(
+        self,
+        info_dict: dict,
+        key: str = 'pixels',
+    ) -> dict[str, torch.Tensor]:
+        """Encode one pixel-like stream through all hierarchy levels.
+
+        Returns a dict with HJEPA-style keys: embed_1..embed_N.
+        Actions are intentionally ignored.
+        """
+        encoded = self._level1_encode_info(info_dict, key)
+        if encoded.get('pixels') is None:
+            raise KeyError(f"Missing '{key}' key in info_dict for hierarchical planning.")
+
+        goal_pixels = encoded['pixels']
+        if not torch.is_tensor(goal_pixels):
+            goal_pixels = torch.as_tensor(goal_pixels)
+
+        model_device = next(self.level_models[0].parameters()).device
+        goal_pixels = goal_pixels.to(model_device)
+
+        # Match JEPA get_cost behavior if a sample axis is present.
+        if goal_pixels.ndim >= 6:
+            goal_pixels = goal_pixels[:, 0]
+
+        encoded['pixels'] = goal_pixels
+        for info_key, value in list(encoded.items()):
+            if info_key == 'pixels':
+                continue
+            if not torch.is_tensor(value):
+                value = torch.as_tensor(value)
+            value = value.to(model_device)
+            if value.ndim >= 4:
+                value = value[:, 0]
+            encoded[info_key] = value
+
+        outputs: dict[str, torch.Tensor] = {}
+
+        # These observation/goal embeddings are fixed conditioning inputs for planning.
+        # Detach them so repeated GD steps do not try to backprop through the same
+        # encoder graph multiple times.
+        with torch.no_grad():
+            for level in range(1, len(self.level_models) + 1):
+                jepa = self.level_models[level - 1]
+                input_key = self._level_input_key(level)
+                if input_key not in encoded:
+                    raise KeyError(
+                        f"Missing '{input_key}' for level {level} encoding."
+                    )
+
+                if level > 1:
+                    encoded[input_key] = self._latest_context_window(
+                        encoded[input_key],
+                        jepa.temporal_window_size,
+                    )
+
+                level_out = jepa.encode(
+                    encoded,
+                    key=input_key,
+                    chunk_temporal_inputs=level > 1,
+                )
+
+                encoded[f'embed_{level}'] = level_out['embed_0']
+                outputs[f'embed_{level}'] = level_out['embed_0'][:, -1:].detach()
+
+        return outputs
+
+    def _level1_encode_info(self, info_dict: dict, key: str) -> dict[str, Any]:
+        if key == 'goal':
+            encoded = {'pixels': info_dict.get('goal')}
+            if 'goal_proprio' in info_dict:
+                encoded['proprio'] = info_dict['goal_proprio']
+        else:
+            encoded = {'pixels': info_dict.get(key)}
+            if 'proprio' in info_dict:
+                encoded['proprio'] = info_dict['proprio']
+
+        return encoded
+
+    @staticmethod
+    def _level_input_key(level: int) -> str:
+        return 'pixels' if level == 1 else f'embed_{level - 1}'
+
+    @staticmethod
+    def _latest_context_window(x: torch.Tensor, window_size: int) -> torch.Tensor:
+        if x.shape[1] >= window_size:
+            return x[:, -window_size:]
+
+        prefix = x[:, :1].expand(-1, window_size - x.shape[1], *x.shape[2:])
+        return torch.cat([prefix, x], dim=1)
+
+
+class LevelCostModel(nn.Module):
+    """Adapter that keeps rollout in local space and computes cost in parent space.
+
+    For non-top levels, predicted latents are first encoded with the JEPA encoder
+    from the level above before comparing against ``goal_embed_0``. When the goal
+    lives more than one level up (every level in between was skipped at horizon 1
+    with ``horizon_one_goal_cost_space='upper'``), the encoders are chained level
+    by level up to ``goal_embed_0_level``.
+    """
+
+    def __init__(
+        self,
+        model: Any,
+        upper_models: list[Any],
+    ) -> None:
+        super().__init__()
+        self.model = model
+        self.upper_models = upper_models
+        self.level = self.model.level
+
+    def rollout(self, info_dict: dict, action_candidates: torch.Tensor) -> dict:
+        return self.model.rollout(info_dict, action_candidates)
+
+    def get_latent_action_queue(self) -> torch.Tensor | None:
+        """Forward latent-action queue access to the wrapped level model."""
+        return self.model.get_latent_action_queue()
+
+    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor) -> torch.Tensor:
+        info_dict = self.rollout(info_dict, action_candidates)
+
+        pred_emb = info_dict["predicted_embed_0"]
+        use_upper_space = bool(info_dict.get('goal_embed_0_in_upper_space', True))
+        goal_level = int(info_dict.get('goal_embed_0_level', self.level + 1))
+        action_weight = float(info_dict.get("action_cost_weight", 0.0))
+        pred_for_cost, action_for_cost = self._project_to_goal_space(
+            pred_emb,
+            action_candidates if action_weight != 0.0 else None,
+            use_upper_space=use_upper_space,
+            dense_upper_goal_projection=bool(
+                info_dict.get("dense_upper_goal_projection", False)
+            ),
+            goal_level=goal_level,
+        )
+
+        cost_info = dict(info_dict)
+        cost_info["predicted_embed_0"] = pred_for_cost
+        cost = self.model.criterion(cost_info)
+        if action_weight != 0.0:
+            action_cost = self._action_cost(action_for_cost, cost_info)
+            if action_cost is not None:
+                cost = cost + action_weight * action_cost
+        return cost
+
+    def _action_cost(
+        self,
+        pred_action: torch.Tensor | None,
+        info_dict: dict,
+    ) -> torch.Tensor | None:
+        target_action = info_dict.get("goal_action")
+        if pred_action is None or target_action is None:
+            return None
+
+        cost_last_n = max(1, int(info_dict.get("cost_last_n", 1)))
+        cost_window = min(cost_last_n, pred_action.shape[-2], target_action.shape[-2])
+        pred_action = pred_action[..., -cost_window:, :]
+        target_action = target_action[..., -cost_window:, :].expand_as(pred_action)
+
+        cost = F.mse_loss(
+            pred_action,
+            target_action.detach(),
+            reduction="none",
+        )
+        return cost.sum(dim=tuple(range(2, cost.ndim)))
+
+    def _project_to_goal_space(
+        self,
+        pred_emb: torch.Tensor,
+        action_candidates: torch.Tensor | None = None,
+        *,
+        use_upper_space: bool,
+        dense_upper_goal_projection: bool,
+        goal_level: int,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Encode predicted embeddings through the upper-level JEPA encoder(s)."""
+        if not self.upper_models or not use_upper_space:
+            return pred_emb, None
+
+        temporal_stride = None
+        if dense_upper_goal_projection:
+            # Encode the level-1 prediction stream into the upper space at stride 1
+            # (one upper latent per sliding kernel-window) to score every predicted
+            # step against the upper goal. Windowed prep supports window_size > 1.
+            temporal_stride = 1
+
+        prepared_pred = self._prepare_upper_state_stream(
+            pred_emb, dense=bool(dense_upper_goal_projection)
+        )
+        b, s = prepared_pred.shape[:2]
+        input_key = f'embed_{self.level}'
+        upper_out = self.upper_models[0].encode(
+            {input_key: prepared_pred.flatten(0, 1)},
+            key=input_key,
+            chunk_temporal_inputs=True,
+            temporal_stride=temporal_stride,
+        )
+        # Chain the dense (stride-1) output stream through each further level.
+        for upper_level in range(self.level + 2, goal_level + 1):
+            input_key = f'embed_{upper_level - 1}'
+            upper_out = self.upper_models[upper_level - self.level - 1].encode(
+                {input_key: upper_out['embed_0']},
+                key=input_key,
+                chunk_temporal_inputs=True,
+                temporal_stride=temporal_stride,
+            )
+
+        pred_for_cost = upper_out["embed_0"].unflatten(0, (b, s))
+        action_for_cost = None
+        if action_candidates is not None:
+            action_for_cost = self._project_actions_with_upper(
+                prepared_pred,
+                action_candidates,
+                temporal_stride=temporal_stride,
+                dense=bool(dense_upper_goal_projection),
+                state_len=pred_emb.shape[-2],
+            )
+
+        return pred_for_cost, action_for_cost
+
+    def _project_actions_with_upper(
+        self,
+        prepared_pred: torch.Tensor,
+        action_candidates: torch.Tensor,
+        *,
+        temporal_stride: int | None = None,
+        dense: bool = False,
+        state_len: int | None = None,
+    ) -> torch.Tensor:
+        upper_model = self.upper_models[0]
+        input_key = f'embed_{self.level}'
+        b, s = prepared_pred.shape[:2]
+        prepared_action = self._prepare_upper_action_stream(
+            action_candidates,
+            target_len=prepared_pred.shape[-2],
+            dense=dense,
+            state_len=state_len,
+        )
+        chunked = upper_model._chunk_temporal_info(
+            {input_key: prepared_pred.flatten(0, 1), "action": prepared_action.flatten(0, 1)},
+            key=input_key,
+            stride=upper_model.temporal_stride if temporal_stride is None else temporal_stride,
+            window_size=upper_model.temporal_window_size,
+        )
+        pooled = upper_model.action_encoder(chunked["action"], chunked["action_mask"])
+
+        # The final pooled action points beyond the final encoded upper state.
+        return pooled.unflatten(0, (b, s))[..., :-1, :]
+
+    def _prepare_upper_state_stream(
+        self, pred_emb: torch.Tensor, *, dense: bool = False
+    ) -> torch.Tensor:
+        # Non-dense (real-stride rollout): causal windows -> front-pad by kernel-1.
+        # Dense (stride-1 goal projection): pad only enough to form one full window
+        # when the stream is shorter than the kernel, then slide -> num windows =
+        # max(1, N - kernel + 1). Both reduce to zero padding at window_size=1, so
+        # a window_size=1 model is bit-identical to the pre-existing behavior.
+        window_size = self.upper_models[0].temporal_window_size
+        count = (
+            max(0, window_size - pred_emb.shape[-2]) if dense else window_size - 1
+        )
+        return self._prefix_repeat_first(pred_emb, count)
+
+    def _prepare_upper_action_stream(
+        self,
+        action_candidates: torch.Tensor,
+        *,
+        target_len: int,
+        dense: bool = False,
+        state_len: int | None = None,
+    ) -> torch.Tensor:
+        # Mirror the state-stream front-pad (see _prepare_upper_state_stream) so
+        # actions stay aligned to the upper states; actions pad with zeros.
+        window_size = self.upper_models[0].temporal_window_size
+        count = max(0, window_size - state_len) if dense else window_size - 1
+        action_emb = self.model.action_embed(action_candidates)
+        action_emb = self._prefix_zeros(action_emb, count)
+        return self._pad_zeros_to_length(action_emb, target_len)
+
+    @staticmethod
+    def _prefix_repeat_first(x: torch.Tensor, count: int) -> torch.Tensor:
+        if count <= 0:
+            return x
+
+        prefix_shape = (*x.shape[:-2], count, x.shape[-1])
+        prefix = x[..., :1, :].expand(prefix_shape)
+        return torch.cat([prefix, x], dim=-2)
+
+    @staticmethod
+    def _prefix_zeros(x: torch.Tensor, count: int) -> torch.Tensor:
+        if count <= 0:
+            return x
+
+        prefix = x.new_zeros(*x.shape[:-2], count, x.shape[-1])
+        return torch.cat([prefix, x], dim=-2)
+
+    @staticmethod
+    def _pad_zeros_to_length(x: torch.Tensor, target_len: int) -> torch.Tensor:
+        pad_len = target_len - x.shape[-2]
+        if pad_len == 0:
+            return x
+
+        suffix = x.new_zeros(*x.shape[:-2], pad_len, x.shape[-1])
+        return torch.cat([x, suffix], dim=-2)
