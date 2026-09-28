@@ -132,7 +132,7 @@ class HJEPA(nn.Module):
 		jepa = self.jepas[level - 1]
 		return int(getattr(jepa, "temporal_stride", 1)), int(getattr(jepa, "temporal_window_size", 1))
 
-	def _sparse_level1_plan(self, seq_len: int, max_level: int, device):
+	def _draw_crops_and_level1_frames(self, seq_len: int, max_level: int, device):
 		"""Draw every level's crop start up front and return the level-1 frames
 		that any kept step at any level reads (directly or through the windows
 		of the levels in between). Frames outside this set would be cropped away
@@ -349,7 +349,7 @@ class HJEPA(nn.Module):
 		crop_starts = {}
 		start_level = 1
 		if sparse_level1_encode:
-			crop_starts, frame_indices = self._sparse_level1_plan(
+			crop_starts, frame_indices = self._draw_crops_and_level1_frames(
 				level_info[key].size(1), max_level, level_info[key].device
 			)
 			self._encode_level1_sparse(level_info, key, frame_indices)
