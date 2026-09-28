@@ -1,0 +1,210 @@
+# DROID: 4-level H-JEPA trained end to end, eb_jepa v2 recipe: stride 2 at every upper level, top level
+# sees 6 states (41-frame level-1 clips); every lower level trains on one random 6-state crop per batch
+# (5 teacher-forced 1-step targets per level), gradient through the prediction target, 150 epochs.
+# history_size 5 + rollout_n 1 with pred weight 5/6 = eb_jepa's nsteps-1 parallel unroll loss (which averages over
+# the 6 states, the re-injected context state included).
+defaults:
+- base/droid
+- _self_
+output_model_name: droid_hjepa_l4_v2
+num_levels: 4
+save_every_n_epochs: 10
+grad_clip_per_level: true
+data:
+  dataset:
+    level2:
+      frameskip: ${level2.stride}
+      window_size: ${level2.window_size}
+      num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
+    level3:
+      frameskip: ${level3.stride}
+      window_size: ${level3.window_size}
+      num_steps: ${eval:'${level3.wm.history_size} + ${level3.wm.rollout_n}'}
+    level4:
+      frameskip: ${level4.stride}
+      window_size: ${level4.window_size}
+      num_steps: ${eval:'${level4.wm.history_size} + ${level4.wm.rollout_n}'}
+trainer:
+  max_epochs: 150
+  devices: 8
+  limit_train_batches: 192
+loader:
+  batch_size: 32
+level1:
+  wm:
+    history_size: 5
+    rollout_n: 1
+    nsteps: null
+  loss:
+    embed:
+      pred:
+        enabled: true
+        weight: ${eval:'5 / 6'}
+level2:
+  lr: 5.0e-04
+  stride: 2
+  window_size: 1
+  idm_coeff: 50
+  idm:
+    hidden_dim: 256
+  action_sigreg_coeff: 0.02
+  wm:
+    history_size: 5
+    rollout_n: 1
+    embed_dim: 384
+    use_proprio: false
+  encoder:
+    type: latent_mlp
+    input_dim: 384
+    trunc_normal_init: true
+    hidden_dim: 768
+    output_dim: 384
+    final_ln: false
+    projector:
+      type: identity
+  action_encoder:
+    type: mlp
+    input_dim: ${level1.predictor.action_dim}
+    hidden_dims:
+    - 64
+    output_dim: 8
+    final_ln: true
+    trunc_normal_init: true
+    queue_size: 4000
+  action_embed:
+    type: identity
+  predictor:
+    type: causal_transformer
+    action_dim: ${level2.action_encoder.output_dim}
+    predictor_dim: 384
+    depth: 12
+    heads: 6
+    dim_head: 64
+    mlp_ratio: 4.0
+    max_seq_len: 16
+    dropout: 0.1
+    emb_dropout: 0.0
+    adaln_init_scale: 0.02
+  loss:
+    embed:
+      pred:
+        enabled: true
+        weight: ${eval:'5 / 6'}
+      sigreg:
+        enabled: true
+        weight: 0.16
+  probes:
+    inputs:
+      proprio: null
+level3:
+  lr: 5.0e-04
+  stride: 2
+  window_size: 1
+  idm_coeff: 50
+  idm:
+    hidden_dim: 256
+  action_sigreg_coeff: 0.02
+  wm:
+    history_size: 5
+    rollout_n: 1
+    embed_dim: 384
+    use_proprio: false
+  encoder:
+    type: latent_mlp
+    input_dim: 384
+    trunc_normal_init: true
+    hidden_dim: 768
+    output_dim: 384
+    final_ln: false
+    projector:
+      type: identity
+  action_encoder:
+    type: mlp
+    input_dim: ${level2.action_encoder.output_dim}
+    hidden_dims:
+    - 64
+    output_dim: 8
+    final_ln: true
+    trunc_normal_init: true
+    queue_size: 4000
+  action_embed:
+    type: identity
+  predictor:
+    type: causal_transformer
+    action_dim: ${level3.action_encoder.output_dim}
+    predictor_dim: 384
+    depth: 12
+    heads: 6
+    dim_head: 64
+    mlp_ratio: 4.0
+    max_seq_len: 16
+    dropout: 0.1
+    emb_dropout: 0.0
+    adaln_init_scale: 0.02
+  loss:
+    embed:
+      pred:
+        enabled: true
+        weight: ${eval:'5 / 6'}
+      sigreg:
+        enabled: true
+        weight: 0.16
+  probes:
+    inputs:
+      proprio: null
+level4:
+  lr: 5.0e-04
+  stride: 2
+  window_size: 1
+  idm_coeff: 50
+  idm:
+    hidden_dim: 256
+  action_sigreg_coeff: 0.02
+  wm:
+    history_size: 5
+    rollout_n: 1
+    embed_dim: 384
+    use_proprio: false
+  encoder:
+    type: latent_mlp
+    input_dim: 384
+    trunc_normal_init: true
+    hidden_dim: 768
+    output_dim: 384
+    final_ln: false
+    projector:
+      type: identity
+  action_encoder:
+    type: mlp
+    input_dim: ${level3.action_encoder.output_dim}
+    hidden_dims:
+    - 64
+    output_dim: 8
+    final_ln: true
+    trunc_normal_init: true
+    queue_size: 4000
+  action_embed:
+    type: identity
+  predictor:
+    type: causal_transformer
+    action_dim: ${level4.action_encoder.output_dim}
+    predictor_dim: 384
+    depth: 12
+    heads: 6
+    dim_head: 64
+    mlp_ratio: 4.0
+    max_seq_len: 16
+    dropout: 0.1
+    emb_dropout: 0.0
+    adaln_init_scale: 0.02
+  loss:
+    embed:
+      pred:
+        enabled: true
+        weight: ${eval:'5 / 6'}
+      sigreg:
+        enabled: true
+        weight: 0.16
+  probes:
+    inputs:
+      proprio: null

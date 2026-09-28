@@ -80,3 +80,52 @@ The README tables come from the paper-figure data in the development repo
   except `visual_antmaze_medium_stitch_train_2_5x`, which had no sidecar (seed is a placeholder).
 - Eval tasks: `h_jepa/assets/eval_trajs/{ant/expert_grid_d3_n50, fourroom/fourroom_tp35_cross2_goal75_n50_d1,
   ogbench/goal_offset_20_pickup_val, pusht/goal_offset_75_val}.pt`, the files the paper evals loaded.
+
+## DROID
+
+The DROID models were trained with the eb_jepa code (`amilabs/research/eb_jepa`), not with
+`stable-wm-lejepa`. Paths are relative to the eb_jepa log root
+`/mnt/vast/home/basile.terver/shared/eb_jepa`; each sweep holds seeds 1/1000/10000 in
+`*_seed<N>/`.
+
+### Training configs (`config/train/droid_<model>.yaml`)
+
+| config | eb_jepa run | checkpoint |
+|---|---|---|
+| `droid_lewm` | `ac_video_jepa/droid_256p/sweep_cls_fpsladder_vitS_outd384_causalT_d12_fps20_nf8_bs256_4gpu_minus16_idmLADDER_ep100_3seed_DROID256p_2026-08-25_18-41/*_idm100_seed<N>` | e-100 (final) |
+| `droid_hwm_l2` | `h_ac_video_jepa/droid_256p/sweep_e2e2lvl_clsHWM_fps20_L1idm100_identityL2_NSTEPS1_ep100_3seed_2gpu_2026-09-24_14-34` | e-100 (final) |
+| `droid_hjepa_l2` | `h_ac_video_jepa/droid_256p/sweep_e2e2lvl_cls_fps20_L1idm100_lvl2idm50_sigr0p16_noDetPT_3seed_2gpu_2026-09-14_02-07` | e-100 of 150 |
+
+- Data: `droid_paths_minus16_256p.csv` (74,896 episodes) for training, `droid_val_indist_256p.csv` for
+  monitoring. Assets in `h_jepa/droid_assets/`: norm stats `full_fps20`, clip manifest
+  `droid_clips_waypoint_curated16v2_20fps_gw36.json` (16 clips x 37 frames, horizon 36).
+- `data.fps: 20` is a decode stride on 60-fps-tagged containers of 15 Hz footage: 5 fps true.
+
+### Planning configs (`config/eval/droid_{flat,l2}.yaml`)
+
+Paper cells under `<run>/plan_eval/wp_gw36/step-*_wp_20fps_gw36_cur16v2_GDLAD100_ns{S}_lr{η}[_l2lr{η2}]`:
+
+| model | planner | S | η (level 1, level 2) | cell |
+|---|---|---|---|---|
+| LeWM + IDM | `droid_flat` | 16 | 0.01 | `ns16_lr0p01` |
+| HWM | `droid_l2` | 16 | 0.01, 0.1 | `ns16_lr0p01_l2lr0p1` |
+| H-JEPA | `droid_l2` | 4 | 0.03, 0.01 | `ns4_lr0p03_l2lr0p01` |
+
+`fig:compute-pareto-real` uses the same runs with the other `ns{S}_lr{η}[_l2lr{η2}]` cells.
+
+### Reference numbers
+
+Fréchet fidelity (%, mean ± SE over train seeds): LeWM + IDM 34.06 ± 1.26, HWM 34.96 ± 0.32,
+H-JEPA 39.95 ± 2.91. The LeWM bar without IDM is the zero-action floor, not a trained model.
+
+### Port validation
+
+- eb_jepa weights hosted in the port give identical forward outputs (max|d| = 0).
+- Eval-only reproduction on the eb_jepa weights is within planner-seed noise: flat 31.9 / 34.5 / 32.4
+  (port) vs 35.9 / 32.2 / 31.2 (eb_jepa).
+
+### Not ported
+
+Decoded-plans figure (needs the visual decoder), anticollapse 16-cell grid, crossval grids,
+`tab:sf-idm0`, varcomp, selective-bars, and the TFLOPs measurement of `fig:compute-pareto-real`
+(eb_jepa `FlopCounterMode`). See `release_todo.md`.

@@ -1,0 +1,116 @@
+# @package _global_
+# DROID: settings shared by the flat and hierarchical eb_jepa-recipe models.
+data:
+  dataset:
+    type: droid
+    name: /mnt/vast/home/basile.terver/shared/data/DROID/droid_paths_minus16_256p.csv
+    val_name: /mnt/vast/home/basile.terver/shared/data/DROID/droid_val_indist_256p.csv
+    camera_views:
+    - left_mp4_path
+    - right_mp4_path
+    fps: 20
+    norm_stats: full_fps20
+    keys_to_load:
+    - pixels
+    - action
+    - proprio
+    level1:
+      frameskip: 1
+      num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
+quick_debug: false
+local_cache_dir: true
+output_model_name: model
+subdir: ${output_model_name}/seed${seed}
+num_workers: 6
+train_split: null
+seed: 42
+img_size: 256
+patch_size: 16
+encoder_scale: small
+dump_object: true
+save_every_n_epochs: 2
+trainer:
+  max_epochs: 100
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+  num_sanity_val_steps: 1
+  limit_train_batches: 292
+loader:
+  batch_size: 64
+  num_workers: ${num_workers}
+  drop_last: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pin_memory: true
+  shuffle: true
+optimizer:
+  type: AdamW
+  lr: 5.0e-04
+  weight_decay: 1.0e-04
+  warmup_ratio: 0.1
+wandb:
+  enabled: false
+  config:
+    entity: null
+    project: hjepa
+    name: null
+    id: null
+    resume: allow
+    log_model: false
+planning_eval:
+  enabled: false
+  every_n_epochs: 0
+  config_name: null
+  output_subdir: planning_eval
+  seeds:
+  - ${seed}
+  run_on_train_start: false
+  run_on_train_end: false
+final_probing_decoding_eval:
+  enabled: false
+level1:
+  lr: 5.0e-04
+  idm_coeff: 100
+  idm:
+    hidden_dim: 256
+  wm:
+    history_size: 3
+    rollout_n: 5
+    nsteps: 2
+    context_length: 1
+    stop_gradient: true
+    embed_dim: 384
+    use_proprio: false
+    action_dim: 7
+  encoder:
+    type: vit
+    scale: ${encoder_scale}
+    patch_size: ${patch_size}
+    image_size: ${img_size}
+    use_mask_token: false
+    projector:
+      type: layernorm
+  predictor:
+    type: causal_transformer
+    action_dim: ${level1.wm.action_dim}
+    predictor_dim: 384
+    depth: 12
+    heads: 6
+    dim_head: 64
+    mlp_ratio: 4.0
+    max_seq_len: 16
+    dropout: 0.1
+    emb_dropout: 0.0
+    adaln_init_scale: 0.02
+  action_embed:
+    type: identity
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.08
+  probes:
+    inputs:
+      proprio: null

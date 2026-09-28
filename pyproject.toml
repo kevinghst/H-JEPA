@@ -27,6 +27,7 @@ dependencies = [
   "gymnasium",
   "einops",
   "h5py",
+  "scipy",
   "hdf5plugin",
   "tqdm",
   "gdown",
@@ -41,6 +42,7 @@ train = [
     "hydra-core",
     "hydra-submitit-launcher",
     "wandb",
+    "decord",
 ]
 
 env = [

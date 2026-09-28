@@ -6,7 +6,9 @@ Code to reproduce the planning results of the H-JEPA paper:
   LeWM, H-JEPA and HWM with 2, 3 and 4 levels on Visual AntMaze, FourRoom Distractors, OGBench Cube and
   Push-T, all with planners under 100 TFLOPs per episode;
 - the level-1 planning columns of the cost-ladder tables (`tab:cost-ladder`, `tab:cost-ladder-appendix`):
-  the H-JEPA level-1 planner with its cost measured in the level-2, 3 or 4 latent.
+  the H-JEPA level-1 planner with its cost measured in the level-2, 3 or 4 latent;
+- the DROID planning figures (`fig:cls-ladder-droid`, `fig:compute-pareto-real`): Fréchet fidelity of
+  LeWM + IDM, HWM and H-JEPA with 2 levels on DROID at 5 fps.
 
 The code builds on [LeWM](https://github.com/lucas-maes/le-wm) and
 [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel), which is vendored in
@@ -22,9 +24,13 @@ h_jepa/
   eval.py                   standalone planning eval
   main_probing_decoding_eval.py   standalone probing/decoding eval
   models/                   JEPA levels, H-JEPA container, encoders, predictors
-  config/train/             28 training configs: <env>_<model>.yaml (+ base/<env>.yaml)
-  config/eval/              28 planning configs: <env>_<planner>.yaml
+  config/train/             28 training configs: <env>_<model>.yaml (+ base/<env>.yaml),
+                            3 DROID configs: droid_{lewm,hwm_l2,hjepa_l2}.yaml
+  config/eval/              28 planning configs: <env>_<planner>.yaml, DROID: droid_{flat,l2}.yaml
   config/probing/           final probing/decoding configs, one per environment
+  droid_data.py             DROID mp4 loader (training) and evaluation-clip reader
+  droid_plan_eval.py        offline DROID planning eval on the 16 evaluation clips
+  droid_assets/             DROID normalization stats and evaluation-clip manifest
   scripts/                  eval-task generators and the train/eval helper scripts
   ARCHITECTURE.md           how training, the hierarchy and planning fit together
 ```
@@ -58,7 +64,7 @@ How to run each part of the pipeline. All commands run from `h_jepa/` unless not
 
 ### 3.1) Datasets
 
-All datasets are HDF5 files under `$STABLEWM_HOME`.
+The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read from mp4 (§5.1).
 
 | Environment | Files | Source |
 |---|---|---|
@@ -66,6 +72,7 @@ All datasets are HDF5 files under `$STABLEWM_HOME`.
 | OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) |
 | Visual AntMaze | `visual_antmaze_medium_{explore_train,stitch_train_2_5x,stitch_val_2_5x}.h5`, `visual_antmaze_medium_probing_{train_2_5x,eval_explore_2_5x,eval_stitch_2_5x}.h5` | generated |
 | FourRoom Distractors | `fourroom_7_21/tp35/fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | generated |
+| DROID | `droid_paths_minus16_256p.csv`, `droid_val_indist_256p.csv` and the 256p mp4 episodes they list | download (`<LINK: DROID 256p corpus>`) |
 
 **Push-T and Cube.** Follow the LeWM data instructions: `<LINK: Push-T data>`, `<LINK: Cube data>`.
 The Push-T probing config also reads a `block_ori` column (`[cos, sin]` of the block angle). If the
@@ -253,6 +260,97 @@ $STABLEWM_HOME/ckpts/
 | | 3 levels | 30.7 ± 1.8 | 28.0 ± 4.0 | 24.7 ± 4.1 | |
 | | 4 levels | 1.3 ± 0.7 | 1.3 ± 0.7 | 0.7 ± 0.7 | 1.3 ± 1.3 |
 
-## 5) License
+## 5) Reproducing DROID
+
+This covers `fig:cls-ladder-droid` and the planner ladder of `fig:compute-pareto-real`. The paper uses
+seeds 1, 1000 and 10000 for every model; each trained model is planned with planner seeds 1, 2 and 3.
+Reference numbers are Fréchet fidelity (%, mean ± SE over the three train seeds, each the mean over
+the three planner seeds).
+
+### 5.1) Data
+
+DROID episodes are mp4 files decoded with `decord` (`droid_data.py`). Training reads
+`droid_paths_minus16_256p.csv`: 74,896 episodes, all of DROID 1.0.1 minus the 16 evaluation clips,
+re-encoded at 256p (`<LINK: DROID 256p corpus>`). `droid_val_indist_256p.csv` (64 episodes) is the
+validation split used for monitoring. Both CSVs list episode directories by absolute path; set them
+with `data.dataset.name` and `data.dataset.val_name` (`config/train/base/droid.yaml`).
+
+`h_jepa/droid_assets/` holds the action/proprio normalization stats (`norm_stats_droid.json`, key
+`full_fps20`) and the evaluation-clip manifest `droid_clips_waypoint_curated16v2_20fps_gw36.json`
+(16 clips of 37 frames, goal 36 steps after the start), which reads the clips from the raw DROID
+1.0.1 release.
+
+`data.fps: 20` (and `20fps` in the asset names) is the decode rate on mp4 containers tagged 60 fps
+that hold 15 Hz footage: the models see 5 fps.
+
+### 5.2) Training
+
+Train 3 models × 3 seeds (9 runs):
+
+```bash
+scripts/train_droid.sh
+```
+
+| Config | Model | GPUs × batch | Epochs |
+|---|---|---|---|
+| `droid_lewm` | flat LeWM + IDM | 4 × 64 | 100 |
+| `droid_hwm_l2` | HWM: identity level 2, trained end-to-end | 2 × 128 | 100 |
+| `droid_hjepa_l2` | H-JEPA: latent-MLP level 2, trained end-to-end | 2 × 128 | 150 (the paper reads epoch 100) |
+
+An epoch is 292 steps. Each run takes one process per GPU: the script launches
+`srun --ntasks-per-node=<GPUs> python main_hjepa.py --config-name droid_<model> seed=<seed> trainer.devices=<GPUs>`,
+so run it inside a SLURM allocation with 4 GPUs and 4 tasks per node, or submit each command as its
+own job. `MODELS` and `SEEDS` restrict it as in §4.1. A run writes:
+
+```
+$STABLEWM_HOME/ckpts/
+  droid_<model>/                    <model> in {lewm, hwm_l2, hjepa_l2}
+    seed<seed>/                     <seed> in {1, 1000, 10000}
+      droid_<model>_object.ckpt     final model
+      droid_<model>_epoch_<N>_object.ckpt   snapshot every save_every_n_epochs (H-JEPA: epoch 100)
+```
+
+### 5.3) Planning evaluation
+
+`droid_plan_eval.py` plans each evaluation clip start → goal in one open-loop call and scores the
+planned actions against the ground-truth ones:
+
+```bash
+python droid_plan_eval.py --ckpt <run>/droid_<model>_object.ckpt [--hier] \
+  --lr <η1> [--l2-lr <η2>] --num-samples <S> --seed <planner seed> --out <dir>
+```
+
+The planner settings are in `config/eval/droid_flat.yaml` (LeWM) and `config/eval/droid_l2.yaml`
+(`--hier`, HWM and H-JEPA): AdamW on the actions, 90 iterations with early stopping after 30
+(patience 5 at 1%), weight decay 0.01, initial std 1.5, actions clipped to ±2σ in normalized action
+space, horizon 36. Level 2 plans 12 steps and passes 12 subgoals to level 1 (weight β = 0.5 on the
+intermediate subgoal costs).
+
+The metric is Fréchet fidelity, 1 − F(planned, GT) / F(zero motion, GT), with F the discrete Fréchet
+distance between cumulative xyz paths, averaged over the 16 clips. The eval writes, under
+`<out>/<tag>/`, `ep_<k>/actions.pt` and `ep_<k>/planning_compute.json` per clip and `eval.csv`
+(`frechet/skill_mean`) over every clip present, so one-clip shards (`--start-index k --num-eval 1`)
+can share one output dir.
+
+| Model | Checkpoint | Planner | S | η (level 1, level 2) |
+|---|---|---|---|---|
+| LeWM + IDM | `droid_lewm_object.ckpt` | flat | 16 | 0.01 |
+| HWM | `droid_hwm_l2_object.ckpt` | `--hier` | 16 | 0.01, 0.1 |
+| H-JEPA | `droid_hjepa_l2_epoch_100_object.ckpt` | `--hier` | 4 | 0.03, 0.01 |
+
+`scripts/eval_droid.sh` runs these cells with planner seeds 1, 2 and 3 on every trained model, writes
+`droid_<model>/seed<seed>/eval_{flat,l2}/plan_seed<ps>/eval.csv` and prints the mean ± SE per model.
+The ladder of `fig:compute-pareto-real` is the same eval on the same checkpoints with
+`--num-samples`, `--lr` and `--l2-lr` swept.
+
+| | Paper | This release |
+|---|---|---|
+| LeWM + IDM | 34.06 ± 1.26 | |
+| HWM | 34.96 ± 0.32 | |
+| H-JEPA | 39.95 ± 2.91 | |
+
+The LeWM bar without IDM in `fig:cls-ladder-droid` is the zero-action floor, not a trained model.
+
+## 6) License
 
 MIT (see `LICENSE`).

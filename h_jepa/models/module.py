@@ -5,6 +5,8 @@ import torch
 from torch.nn import functional as F
 import torch.nn as nn
 
+from loss import init_module_weights
+
 
 def build_projector(projector_cfg, *, input_dim: int, output_dim: int) -> nn.Module:
     projector_type = str(projector_cfg.get("type", "mlp")).lower()
@@ -16,6 +18,9 @@ def build_projector(projector_cfg, *, input_dim: int, output_dim: int) -> nn.Mod
                 f"got input_dim={input_dim}, output_dim={output_dim}."
             )
         return nn.Identity()
+
+    if projector_type == "layernorm":
+        return nn.LayerNorm(output_dim)
 
     if projector_type == "mlp":
         return MLP(
@@ -266,6 +271,7 @@ class ResidualLatentMLP(nn.Module):
         output_dim=None,
         act_fn=nn.GELU,
         final_ln=True,
+        trunc_normal_init=False,
     ):
         super().__init__()
         out_dim = output_dim or input_dim
@@ -274,6 +280,8 @@ class ResidualLatentMLP(nn.Module):
         self.act = act_fn()
         self.fc2 = nn.Linear(hidden_dim, out_dim)
         self.final_norm = nn.LayerNorm(out_dim) if final_ln else nn.Identity()
+        if trunc_normal_init:
+            self.apply(init_module_weights)
 
     def forward(self, x):
         x = self.input_norm(x)

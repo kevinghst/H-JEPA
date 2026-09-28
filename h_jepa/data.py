@@ -157,6 +157,10 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None):
     else:
         cfg = dict(dataset_cfg)
     cfg.pop("val_name", None)
+    if cfg.pop("type", None) == "droid":
+        from droid_data import DROIDDataset
+
+        return DROIDDataset(**cfg)
     sources = cfg.pop("sources", None)
 
     if sources is None:
@@ -370,7 +374,7 @@ def normalizer_columns_from_dataset_cfg(dataset_cfg) -> list[str]:
 def _column_mean_std(dataset, col: str) -> tuple[np.ndarray, np.ndarray, int]:
     if hasattr(dataset, "get_col_stats"):
         mean, std = dataset.get_col_stats(col)
-        count = int(dataset.get_col_data(col).shape[0])
+        count = int(dataset.lengths.sum())
         return (
             np.asarray(mean, dtype=np.float64),
             np.asarray(std, dtype=np.float64),

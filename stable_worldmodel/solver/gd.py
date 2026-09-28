@@ -23,6 +23,7 @@ class GradientSolver(torch.nn.Module):
         action_noise: Noise added to actions during optimization.
         early_stop_patience: Consecutive non-improving steps before stopping.
         early_stop_rel_delta: Minimum relative improvement required to reset patience.
+        action_clip_sigma: Clip actions to prior mean ± sigma·std each step; None uses queue quantiles.
         device: Device for tensor computations.
         seed: Random seed for reproducibility.
         optimizer_cls: PyTorch optimizer class to use.
@@ -40,6 +41,7 @@ class GradientSolver(torch.nn.Module):
         action_noise: float = 0.0,
         early_stop_patience: int = 5,
         early_stop_rel_delta: float = 1e-2,
+        action_clip_sigma: float | None = None,
         device: str | torch.device = 'cpu',
         seed: int = 1234,
         optimizer_cls: type[torch.optim.Optimizer] = torch.optim.SGD,
@@ -55,6 +57,7 @@ class GradientSolver(torch.nn.Module):
         self.action_noise = action_noise
         self.early_stop_patience = max(0, int(early_stop_patience))
         self.early_stop_rel_delta = max(0.0, float(early_stop_rel_delta))
+        self.action_clip_sigma = action_clip_sigma
         self.device = device
         self.torch_gen = torch.Generator(device=device).manual_seed(seed)
 
@@ -171,6 +174,15 @@ class GradientSolver(torch.nn.Module):
 
     def _get_action_clip_bounds(self) -> tuple[torch.Tensor, torch.Tensor] | None:
         """Estimate per-dimension clipping bounds from queued latent actions."""
+        if self.action_clip_sigma is not None:
+            prior_stats = self._get_action_prior_stats()
+            if prior_stats is None:
+                mean = torch.zeros(self.action_dim, device=self.device)
+                std = torch.ones(self.action_dim, device=self.device)
+            else:
+                mean, std = prior_stats
+            return mean - self.action_clip_sigma * std, mean + self.action_clip_sigma * std
+
         queue = getattr(self.model, 'get_latent_action_queue', lambda: None)()
         if not (torch.is_tensor(queue) and queue.numel() > 0):
             return None

@@ -1,0 +1,114 @@
+# DROID: 4-level hierarchical planning, read by droid_plan_eval.py (offline, open-loop).
+# Stride-2 hierarchy: levels 1..4 plan 36 / 18 / 9 / 4 steps of the 36-step goal
+# window; each upper level hands all its predictions down as subgoals (num_subgoals =
+# horizon, the anchored choice at stride 2), scored with weight 0.5 on the intermediate
+# ones; the top level is scored on the endpoint. Levels 3+ use the level-2 GD settings.
+seed: 1234
+clips: droid_assets/droid_clips_waypoint_curated16v2_20fps_gw36.json
+img_size: 256
+eval_budget: 36
+solver:
+  _target_: stable_worldmodel.solver.HierarchicalSolver
+  solvers:
+    level1:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      min_its: 30
+      early_stop_patience: 5
+      early_stop_rel_delta: 0.01
+      batch_size: 1
+      var_scale: 1.5
+      num_samples: 4
+      action_noise: 0
+      action_clip_sigma: 2.0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.03
+        weight_decay: 0.01
+    level2:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      min_its: 30
+      early_stop_patience: 5
+      early_stop_rel_delta: 0.01
+      batch_size: 1
+      var_scale: 1.5
+      num_samples: 4
+      action_noise: 0
+      action_clip_sigma: 2.0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.01
+        weight_decay: 0.01
+    level3:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      min_its: 30
+      early_stop_patience: 5
+      early_stop_rel_delta: 0.01
+      batch_size: 1
+      var_scale: 1.5
+      num_samples: 4
+      action_noise: 0
+      action_clip_sigma: 2.0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.01
+        weight_decay: 0.01
+    level4:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      min_its: 30
+      early_stop_patience: 5
+      early_stop_rel_delta: 0.01
+      batch_size: 1
+      var_scale: 1.5
+      num_samples: 4
+      action_noise: 0
+      action_clip_sigma: 2.0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.01
+        weight_decay: 0.01
+hierarchical_plan_config:
+  receding_horizon: 36
+  level1:
+    horizon: 36
+    pre_decay_horizon: 36
+    cost_last_n: 999
+    intermediate_cost_weight: 0.5
+  level2:
+    horizon: 18
+    pre_decay_horizon: 18
+    action_dim: 8
+    num_subgoals: 18
+    cost_last_n: 999
+    intermediate_cost_weight: 0.5
+  level3:
+    horizon: 9
+    pre_decay_horizon: 9
+    action_dim: 8
+    num_subgoals: 9
+    cost_last_n: 999
+    intermediate_cost_weight: 0.5
+  level4:
+    horizon: 4
+    action_dim: 8
+    num_subgoals: 4
+    cost_last_n: 1

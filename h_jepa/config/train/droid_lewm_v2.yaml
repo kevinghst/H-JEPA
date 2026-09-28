@@ -1,0 +1,15 @@
+# DROID: flat CLS model, eb_jepa v2 recipe: 6-frame clips (5 teacher-forced 1-step targets),
+# nsteps 1, gradient through the prediction target, 150 epochs.
+defaults:
+- base/droid
+- _self_
+output_model_name: droid_lewm_v2
+num_levels: 1
+save_every_n_epochs: 10
+trainer:
+  max_epochs: 150
+level1:
+  wm:
+    history_size: 1
+    nsteps: 1
+    detach_pred_target: false
