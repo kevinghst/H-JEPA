@@ -95,13 +95,13 @@ class HierarchicalSolver:
     ) -> dict:
         """Plan top-down: each level's predicted latents become the goals of the level below.
 
-        A level with planning horizon 1 (other than level 1) is skipped. Each planned level takes
-        its goal from one of three sources:
-          - the level above planned: its first predicted latent (and macro-action), with the cost
-            measured in the upper level's space;
-          - the level(s) above were skipped with ``horizon_one_goal_cost_space='upper'``: the true
-            goal at the highest skipped level, with predictions projected up to it at stride 1;
-          - otherwise: the true goal at this level.
+        A level with planning horizon 1 (other than level 1) is skipped. Each planned level then
+        takes its goal from one of two sources:
+          - no plan from the level above (top level, or every level above was skipped): the real
+            goal, measured at this level or, through skipped levels with
+            ``horizon_one_goal_cost_space='upper'``, at the highest of them;
+          - the level above planned: its first predicted latent (and macro-action), measured in
+            the upper level's space.
         """
         subgoal_latents = None
         subgoal_actions = None
@@ -139,8 +139,24 @@ class HierarchicalSolver:
             level_info['embed_0'] = obs_embeddings[f'embed_{level}']
             level_info['action_cost_weight'] = level_cfg.action_cost_weight
 
-            if subgoal_latents is not None:
-                # Goal: the upper plan's first predicted latent (+ macro-action).
+            if subgoal_latents is None:
+                # No plan from the level above: this is the top level, or every level above
+                # was skipped (horizon 1). Aim at the real goal. It is measured at this level,
+                # unless skipped levels with horizon_one_goal_cost_space='upper' passed down a
+                # higher level; then every predicted step is encoded up to that level
+                # (stride 1) and compared with the real goal there. This is also how the
+                # _project configs measure level-1 cost in a level-k latent.
+                goal_level = skipped_goal_level or level
+                level_info['goal_embed_0'] = goal_embeddings[f'embed_{goal_level}']
+                level_info['goal_embed_0_level'] = goal_level
+                level_info['goal_embed_0_in_upper_space'] = goal_level > level
+                level_info['dense_upper_goal_projection'] = goal_level > level
+                this_level_anchored = True
+            else:
+                # The level above planned: follow its plan. The goal is its first predicted
+                # latent (the next waypoint), compared in the upper level's latent space after
+                # encoding this level's predictions at the upper level's stride. The upper
+                # plan's first macro-action is also a target (used when action_cost_weight > 0).
                 num_subgoals = self._level_plan_config(level + 1).num_subgoals
                 first_pred_idx = 1 if subgoal_latents.shape[1] > 1 else 0
                 first_action_idx = max(0, first_pred_idx - 1)
@@ -166,18 +182,6 @@ class HierarchicalSolver:
                 level_info['goal_embed_0'] = next_goal
                 level_info['goal_action'] = next_action
                 level_info['goal_embed_0_in_upper_space'] = True
-            elif skipped_goal_level is not None:
-                # Goal: the true goal at the highest skipped level.
-                level_info['goal_embed_0'] = goal_embeddings[f'embed_{skipped_goal_level}']
-                level_info['goal_embed_0_level'] = skipped_goal_level
-                level_info['goal_embed_0_in_upper_space'] = True
-                level_info['dense_upper_goal_projection'] = True
-                this_level_anchored = True
-            else:
-                # Goal: the true goal at this level.
-                level_info['goal_embed_0'] = goal_embeddings[f'embed_{level}']
-                level_info['goal_embed_0_in_upper_space'] = False
-                this_level_anchored = True
 
             # num_subgoals, upper JEPA stride, and planning_horizon are coupled:
             # after stride-subsampling the level-N rollout (T+1 frames → ceil((T+1)/stride))
