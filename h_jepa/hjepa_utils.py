@@ -135,11 +135,7 @@ def hjepa_forward(
     if normalize_batch is not None:
         normalize_batch(batch)
 
-    output = self.model.encode_hierarchical_per_level_inputs(
-        batch,
-        key="pixels",
-        levels_to_encode=int(cfg.num_levels),
-    )
+    output = self.model.encode_hierarchical(batch)
     add_probe_targets(output, cfg)
 
     total_loss = None

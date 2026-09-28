@@ -153,6 +153,11 @@ Round 4
   Cube/Ant/FourRoom runs: new NMSE = old summary-CSV macro NMSE (1e-16), losses, decoders and
   decodings bit-identical. The dev figure pipeline (`depth_family.py`) reads the summary CSV and
   would need to read `metrics.yaml` instead.
+- `HJEPA.encode_hierarchical_per_level_inputs` merged into `encode_hierarchical` (its only caller);
+  gone: the `key` / `levels_to_encode` / `chunk_temporal_inputs` / `start_level` args, the level-1
+  branch of the loop (the dense path now runs `_encode_level1` on every frame), the action/proprio
+  restore and the input checks. Sparse outputs and fwd_test losses bit-identical; the dense path
+  no longer leaks stale `pixel_embed_{0,2,3}` / `proprio_embed_{0,2,3}` keys on Ant.
 
 ## Kept on purpose
 

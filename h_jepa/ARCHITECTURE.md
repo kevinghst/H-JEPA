@@ -40,7 +40,7 @@ state_level1    : (B, T1, state_dim)    — z-score normalized (if loaded)
 
 `T1` may be longer than the level-1 training target length because it must
 contain enough lower-level states to construct all higher-level windows. After
-model-side chunking, `encode_hierarchical_per_level_inputs` adds higher-level
+model-side chunking, `encode_hierarchical` adds higher-level
 state targets. If `levelN.window_size > 1`, non-action targets are chunked:
 
 ```
@@ -110,32 +110,29 @@ State chunks are required to be full windows in the current training path. Actio
 
 ### `encode_hierarchical`
 
-The primitive encoding function. Given a single input dict (with one `pixels` key and one `action` key), it runs the full encoder chain from level 1 up through level N in sequence:
+The training-time encode. The dataset returns only a long `level1` stream
+(`pixels_level1`, `action_level1`, targets); `encode_hierarchical` lifts it through
+every level in sequence:
 
 ```python
-# level 1: encode raw pixels
-embed_1 = JEPA[1].encode(pixels)
-
-# level 2: encode level-1 embeddings
-embed_2 = JEPA[2].encode(embed_1)
-
-# ... and so on up to levels_to_encode
+embed_1 = JEPA[1].encode(pixels)    # level 1: raw pixels (sparse or dense, see below)
+embed_2 = JEPA[2].encode(embed_1)   # level 2: chunks of level-1 embeddings
+# ... and so on up to level N
 ```
 
-Each level's `encode` call usually passes the previous level's `embed_0` output as the next level's observation. If a higher level has proprio enabled, it instead passes the previous level's `pixel_embed_0` and `proprio_embed_0` streams into that level's fusion encoder.
+Each higher level encodes the previous level's `embed_{N-1}` and `action_{N-1}` with
+`chunk_temporal_inputs=True`, so its `JEPA.encode` does the constant-stride
+chunking/subsampling. If a higher level has proprio enabled, it instead takes the
+previous level's `pixel_embed_{N-1}` and `proprio_embed_{N-1}` streams into its fusion
+encoder. The output holds `embed_1..embed_N` (`(B, T, D)` each), `action_1..action_N`,
+`pixel_embed_N` / `proprio_embed_N` for proprio-enabled levels, and the chunked state
+targets (`pixels_levelN`, `state_levelN`, `proprio_levelN`, ...).
 
-**Returns**: the input dict augmented with `embed_1..embed_N` (shape `(B, T, D)` each) and `action_1..action_N` (shape `(B, T, A)` each). Proprio-enabled levels also return `pixel_embed_N` and `proprio_embed_N`. With model-side chunking, it may also carry chunked state targets such as `pixels_levelN`, `state_levelN`, and `proprio_levelN`. If `return_last_only=True`, returns only the last level's model outputs, including stream embeddings when present.
+Planning and probing do not use it: they call each level's `JEPA.encode` directly.
 
-This function is used during **planning**, where the observation and goal are each a single pixel stream that gets lifted through all levels.
-
-### `encode_hierarchical_per_level_inputs`
-
-During training, the dataset returns only a long `level1` stream.
-`encode_hierarchical_per_level_inputs` calls `encode_hierarchical` once with
-`return_last_only=False`; higher-level `JEPA.encode` calls do the constant-stride
-chunking/subsampling. Lower levels may be longer than their training target
-length while constructing upper levels, so before returning the output, each
-level's state and action variables are randomly cropped to:
+Lower levels may be longer than their training target length while constructing
+upper levels, so before returning the output, each level's state and action
+variables are randomly cropped to:
 
 ```
 levelN.wm.history_size + levelN.wm.rollout_n

@@ -68,10 +68,7 @@ def run(model, batch, sparse, frames_seen):
     torch.manual_seed(123)
     try:
         with torch.no_grad():
-            return model.encode_hierarchical_per_level_inputs(
-                dict(batch), key="pixels", levels_to_encode=model.num_levels,
-                sparse_level1_encode=sparse,
-            )
+            return model.encode_hierarchical(dict(batch), sparse_level1_encode=sparse)
     finally:
         model.jepas[0].encode = encode
 
