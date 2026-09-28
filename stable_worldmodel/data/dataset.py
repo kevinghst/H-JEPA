@@ -33,14 +33,11 @@ class Dataset:
         # frameskip: int = 1,
         # num_steps: int = 1,
         level1: dict | None = None,
-        level2: dict | None = None,
-        precompute_levels: bool = True,
         transform: Callable[[dict], dict] | None = None,
         **level_kwargs,
     ) -> None:
         self.lengths = lengths
         self.offsets = offsets
-        self.precompute_levels = bool(precompute_levels)
 
         def _normalize_level(level_cfg: dict | None, level_name: str) -> dict | None:
             if level_cfg is None:
@@ -61,7 +58,7 @@ class Dataset:
             normalized["window_size"] = int(normalized.get("window_size", normalized.get("kernel_size", 1)))
             return normalized
 
-        level_inputs = {"level1": level1, "level2": level2}
+        level_inputs = {"level1": level1}
         for level_name, level_cfg in level_kwargs.items():
             match = re.fullmatch(r"level([1-9]\d*)", level_name)
             if match is None:
@@ -88,7 +85,6 @@ class Dataset:
 
         levels = [levels_by_idx[level_idx] for level_idx in range(1, max_level + 1)]
         self.level1 = None
-        self.level2 = None
         for level_idx, level in enumerate(levels, start=1):
             setattr(self, f"level{level_idx}", level)
 
@@ -221,8 +217,6 @@ class HDF5Dataset(Dataset):
         keys_to_merge: dict[str, list[str] | str] | None = None,
         cache_dir: str | Path | None = None,
         level1: dict | None = None,
-        level2: dict | None = None,
-        precompute_levels: bool = True,
         **level_kwargs,
     ) -> None:
         self.h5_path = Path(cache_dir or get_cache_dir(), f'{name}.h5')
@@ -243,8 +237,6 @@ class HDF5Dataset(Dataset):
             lengths=lengths,
             offsets=offsets,
             level1=level1,
-            level2=level2,
-            precompute_levels=precompute_levels,
             transform=transform,
             **level_kwargs,
         )
@@ -263,133 +255,33 @@ class HDF5Dataset(Dataset):
                 self.h5_path, 'r', swmr=True, rdcc_nbytes=256 * 1024 * 1024
             )
 
-    def _build_level2_action_chunks(
-        self,
-        level1_action_steps: torch.Tensor,
-        action_dim: int,
-    ) -> torch.Tensor:
-        chunk_len = int(self.level2['frameskip'])
-        num_chunks = int(self.level2['num_steps'])
-        chunks = []
-
-        for chunk_idx in range(num_chunks):
-            start = chunk_idx * chunk_len
-            end = start + chunk_len
-            chunk = level1_action_steps[start:end]
-
-            if chunk.shape[0] < chunk_len:
-                pad = torch.zeros(
-                    (chunk_len - chunk.shape[0], self.level1['frameskip'], action_dim),
-                    dtype=chunk.dtype,
-                    device=chunk.device,
-                )
-                chunk = torch.cat((chunk, pad), dim=0)
-
-            chunks.append(chunk)
-
-        return torch.stack(chunks)
-
     def _load_slice_with_levels(self, ep_dix: int, start: int) -> dict:
-        # if self.levels == 1:
-        #     return self._load_slice(ep_dix, start, start + self.level1['span'])
-        # else:
-        #     steps = self._load_slice(ep_dix, start, start + self.level2['span'])
-        #     steps['level1'] = self._load_slice(
-        #         ep_dix, start, start + self.level1['span']
-        #     )
-        #     return steps
-        
-        # load the largest span with level 1 granularity, then subsample for level 2
-        
-        output = {}
-        
-        total_level1_steps = self._load_slice(
-            ep_idx=ep_dix, 
-            start=start, 
+        # Return the full level-1 sequence covering the largest span; the model
+        # derives the higher levels from it.
+        level1_steps = self._load_slice(
+            ep_idx=ep_dix,
+            start=start,
             end=start + self.last_level['span'],
             frameskip=self.level1['frameskip'],
             apply_transform=False,
         )
 
-        assert total_level1_steps['action'].shape[0] % self.level1['frameskip'] == 0
-        total_level1_frames = total_level1_steps['action'].shape[0] // self.level1['frameskip']
-        action_dim = total_level1_steps['action'].shape[-1]
-        level1_action_steps = total_level1_steps['action'].reshape(
-            total_level1_frames, self.level1['frameskip'], action_dim
+        assert level1_steps['action'].shape[0] % self.level1['frameskip'] == 0
+        level1_frames = level1_steps['action'].shape[0] // self.level1['frameskip']
+        action_dim = level1_steps['action'].shape[-1]
+        level1_steps['action'] = level1_steps['action'].reshape(
+            level1_frames, self.level1['frameskip'], action_dim
         )
-        total_level1_steps['action'] = level1_action_steps
 
-        if not self.precompute_levels:
-            # Return the full level-1 sequence covering the largest span and let
-            # the model derive higher levels from it.
-            level1_steps = dict(total_level1_steps)
+        if self.transform:
+            level1_steps = self.transform(level1_steps)
 
-            if self.transform:
-                level1_steps = self.transform(level1_steps)
+        if 'action' in level1_steps:
+            level1_steps['action'] = level1_steps['action'].reshape(
+                level1_steps['action'].shape[0], -1
+            )
 
-            if 'action' in level1_steps:
-                level1_steps['action'] = level1_steps['action'].reshape(
-                    level1_steps['action'].shape[0], -1
-                )
-
-            for col, steps in level1_steps.items():
-                output[f'{col}_level1'] = steps
-
-            return output
-
-        # construct level 1 by sampling a chunk from the total_level1_steps
-        if self.level1 is not None:
-            total_level1_len = total_level1_frames
-            start = torch.randint(0, total_level1_len - self.level1['num_steps'] + 1, (1,)).item()  # inclusive start
-            level1_steps = {}
-            for col in self._keys:
-                if col == 'action':
-                    chunk = level1_action_steps[start:start + self.level1['num_steps']]
-                else:
-                    x = total_level1_steps[col]
-                    chunk = x[start:start + self.level1['num_steps']]
-                level1_steps[col] = chunk
-
-            if self.transform:
-                level1_steps = self.transform(level1_steps)
-
-            if 'action' in level1_steps:
-                level1_steps['action'] = level1_steps['action'].reshape(
-                    level1_steps['action'].shape[0], -1
-                )
-
-            for col, chunk in level1_steps.items():
-                output[f'{col}_level1'] = chunk
-            
-        # At this point, pixels_level1 (4, 3, 224, 224). action_level1 (4, 10)
-            
-        # construct level 2 by subsampling from total_level1_steps
-        if self.level2 is not None:
-            level2_steps = {}
-            for col in self._keys:
-                if col == 'action':
-                    # Keep primitive action dim through transform, then flatten back.
-                    chunk = self._build_level2_action_chunks(
-                        level1_action_steps,
-                        action_dim,
-                    )
-                else:
-                    x = total_level1_steps[col]
-                    # keep every frameskip-th level-1 frame
-                    chunk = x[:: self.level2['frameskip']][:self.level2['num_steps']]
-                level2_steps[col] = chunk
-
-            if self.transform:
-                level2_steps = self.transform(level2_steps)
-
-            if 'action' in level2_steps:
-                a = level2_steps['action']
-                level2_steps['action'] = a.reshape(a.shape[0], a.shape[1], -1)
-
-            for col, chunk in level2_steps.items():
-                output[f'{col}_level2'] = chunk
-                                                
-        return output
+        return {f'{col}_level1': steps for col, steps in level1_steps.items()}
         
 
     def _load_slice(

@@ -12,9 +12,8 @@ This document covers the two entry points for working with the hierarchical worl
 
 `swm.data.HDF5Dataset` loads pre-collected trajectories from HDF5 files. Each sample is a **clip** — a short window of consecutive frames sampled at a given frameskip.
 
-The dataset is configured per-level. In the current HJEPA training path,
-`data.dataset.precompute_levels` should be `false`: the dataset returns a
-single level-1 stream, and the model constructs higher levels internally. For a
+The dataset is configured per-level. It returns a single level-1 stream long
+enough for the top level, and the model constructs higher levels internally. For a
 2-level model on PushT with level-2 stride 3:
 
 | Level | Frameskip | Kernel size | Clip length (`num_steps`) |

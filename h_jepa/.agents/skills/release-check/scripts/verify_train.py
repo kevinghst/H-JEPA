@@ -24,7 +24,7 @@ IGNORED = ("sweep", "subdir", "output_model_name", "wandb", "planning_eval", "fi
 REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|debug\..*)$",
            r"level\d+\.predictor\.ensemble_size$", r"level\d+\.loss\.embed\.temp_straight\..*",
            r"level\d+\.wm\.type$", r"level\d+\.(encoder\.|encoder\.pixel_encoder\.encoder\.)resnet9$",
-           r"data\.dataset\.(random_waypoints|augment_static_window_prob)$",
+           r"data\.dataset\.(random_waypoints|augment_static_window_prob|precompute_levels)$",
            r"data\.dataset\.level\d+\.(load|sample_range_low|sample_range_high)$",
            r"(encoder_resnet9|projector_loss_weight|train_value_function)$", r"optimizer\.decoder\..*"]
 

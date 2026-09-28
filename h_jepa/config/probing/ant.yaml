@@ -65,7 +65,6 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-  precompute_levels: false
 eval_datasets:
   explore:
     name: visual_antmaze_medium_probing_eval_explore_2_5x
@@ -90,7 +89,6 @@ eval_datasets:
     level1:
       frameskip: 1
       num_steps: 1
-    precompute_levels: false
   stitch:
     name: visual_antmaze_medium_probing_eval_stitch_2_5x
     total_transitions: 25000
@@ -114,4 +112,3 @@ eval_datasets:
     level1:
       frameskip: 1
       num_steps: 1
-    precompute_levels: false

@@ -55,7 +55,6 @@ data:
     level1:
       frameskip: 5
       num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
-    precompute_levels: false
 quick_debug: false
 local_cache_dir: true
 output_model_name: model

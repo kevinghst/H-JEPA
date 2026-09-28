@@ -114,8 +114,6 @@ eval:
   start_state_mode: xy_neutral
   goal_state_mode: xy_neutral
   eval_budget: 350
-  expert_action_distance_horizon: null
-  expert_action_distance_dims: null
   img_size: 64
   dataset_name: visual_antmaze_medium_stitch_val_2_5x
   callables:

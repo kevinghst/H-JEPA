@@ -227,7 +227,6 @@ class HJEPA(nn.Module):
 		info: dict,
 		key: str = "pixels",
 		levels_to_encode: int = -1,
-		return_last_only: bool = False,
 		chunk_temporal_inputs: bool = False,
 		start_level: int = 1,
 	) -> dict:
@@ -243,7 +242,6 @@ class HJEPA(nn.Module):
 			key: Input key for level 1 encoding.
 			levels_to_encode: Number of levels to encode.
 				Use -1 to encode all levels.
-			return_last_only: If True, only return the last level's output.
 		"""
   
 		if not isinstance(info, dict):
@@ -317,17 +315,6 @@ class HJEPA(nn.Module):
 		for temporary_key in temporary_proprio_keys:
 			info.pop(temporary_key, None)
 
-		if return_last_only:
-			last_level_output = {}
-			for output_name in ("embed", "pixel_embed", "proprio_embed"):
-				output_key = f"{output_name}_{max_level}"
-				if output_key in info:
-					last_level_output[output_key] = info[output_key]
-			last_action_key = f"action_{max_level}"
-			if last_action_key in info:
-				last_level_output[last_action_key] = info[last_action_key]
-			return last_level_output
-
 		return info
 
 	def encode_hierarchical_per_level_inputs(
@@ -335,19 +322,10 @@ class HJEPA(nn.Module):
 		info: dict,
 		key: str = "pixels",
 		levels_to_encode: int = -1,
-		precompute_levels: bool = True,
 		sparse_level1_encode: bool = True,
 	) -> dict:
-		"""Encode from per-level keys and aggregate hierarchical outputs.
-
-		Expected input keys per level:
-		- f"{key}_levelN" (e.g., pixels_level1)
-		- f"action_levelN"
-
-		For each level N, this calls encode_hierarchical(..., levels_to_encode=N,
-		return_last_only=True) and aggregates into embed_1..embed_N and
-		action_1..action_N.
-		"""
+		"""Encode the level-1 sequence (f"{key}_level1", "action_level1") through
+		all levels and randomly crop each level's outputs to its target length."""
 		if not isinstance(info, dict):
 			raise TypeError("info must be a dict")
 
@@ -360,80 +338,50 @@ class HJEPA(nn.Module):
 
 		output = dict(info)
 
-		if not precompute_levels:
-			level_info = self._collect_level_info(info, 1)
-			self._add_level_target_aliases(level_info, 1)
-			level1_working_keys = set(level_info)
-			if key not in level_info:
-				raise KeyError(f"Missing '{key}_level1' for hierarchical encoding")
-			if "action" not in level_info:
-				raise KeyError("Missing 'action_level1' for hierarchical encoding")
+		level_info = self._collect_level_info(info, 1)
+		self._add_level_target_aliases(level_info, 1)
+		level1_working_keys = set(level_info)
+		if key not in level_info:
+			raise KeyError(f"Missing '{key}_level1' for hierarchical encoding")
+		if "action" not in level_info:
+			raise KeyError("Missing 'action_level1' for hierarchical encoding")
 
-			crop_starts = {}
-			start_level = 1
-			if sparse_level1_encode:
-				crop_starts, frame_indices = self._sparse_level1_plan(
-					level_info[key].size(1), max_level, level_info[key].device
-				)
-				self._encode_level1_sparse(level_info, key, frame_indices)
-				start_level = 2
-
-			level_out = self.encode_hierarchical(
-				level_info,
-				key=key,
-				levels_to_encode=max_level,
-				return_last_only=False,
-				chunk_temporal_inputs=True,
-				start_level=start_level,
+		crop_starts = {}
+		start_level = 1
+		if sparse_level1_encode:
+			crop_starts, frame_indices = self._sparse_level1_plan(
+				level_info[key].size(1), max_level, level_info[key].device
 			)
-			internal_keys = level1_working_keys | {"embed_0", "action_0"}
-			output.update(
-				{
-					output_key: value
-					for output_key, value in level_out.items()
-					if output_key not in internal_keys
-				}
-			)
+			self._encode_level1_sparse(level_info, key, frame_indices)
+			start_level = 2
 
-			for level in range(1, max_level + 1):
-				target_len = getattr(self.jepas[level - 1], "target_length", None)
-				if target_len is None:
-					continue
-				extra_keys = level1_working_keys if level == 1 else None
-				self._random_crop_level_outputs(
-					output,
-					level=level,
-					target_len=target_len,
-					extra_keys=extra_keys,
-					start=crop_starts.get(level),
-				)
-
-			return output
+		level_out = self.encode_hierarchical(
+			level_info,
+			key=key,
+			levels_to_encode=max_level,
+			chunk_temporal_inputs=True,
+			start_level=start_level,
+		)
+		internal_keys = level1_working_keys | {"embed_0", "action_0"}
+		output.update(
+			{
+				output_key: value
+				for output_key, value in level_out.items()
+				if output_key not in internal_keys
+			}
+		)
 
 		for level in range(1, max_level + 1):
-			pixels_key = f"{key}_level{level}"
-			action_key = f"action_level{level}"
-
-			has_pixels = pixels_key in info
-			has_action = action_key in info
-
-			# If a level is disabled upstream, both keys may be absent; skip it.
-			if not has_pixels and not has_action:
+			target_len = getattr(self.jepas[level - 1], "target_length", None)
+			if target_len is None:
 				continue
-			if not has_pixels:
-				raise KeyError(f"Missing '{pixels_key}' for level {level} encoding")
-			if not has_action:
-				raise KeyError(f"Missing '{action_key}' for level {level} encoding")
-
-			level_info = self._collect_level_info(info, level)
-
-			level_out = self.encode_hierarchical(
-				level_info,
-				key=key,
-				levels_to_encode=level,
-				return_last_only=True,
+			extra_keys = level1_working_keys if level == 1 else None
+			self._random_crop_level_outputs(
+				output,
+				level=level,
+				target_len=target_len,
+				extra_keys=extra_keys,
+				start=crop_starts.get(level),
 			)
-
-			output.update(level_out)
 
 		return output

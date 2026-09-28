@@ -51,7 +51,6 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-  precompute_levels: false
   total_transitions: 160000
 eval_datasets:
   val:
@@ -70,5 +69,4 @@ eval_datasets:
     level1:
       frameskip: 1
       num_steps: 1
-    precompute_levels: false
     total_transitions: 40000

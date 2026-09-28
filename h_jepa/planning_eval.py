@@ -632,12 +632,6 @@ def run_planning_eval(
                 goal_state_mode=cfg.eval.get(
                     "goal_state_mode", "dataset_full"
                 ),
-                expert_action_distance_horizon=cfg.eval.get(
-                    "expert_action_distance_horizon", None
-                ),
-                expert_action_distance_dims=cfg.eval.get(
-                    "expert_action_distance_dims", None
-                ),
             )
         end_time = time.time()
     finally:
@@ -659,8 +653,6 @@ def run_planning_eval(
 
     metrics_to_save = _serialize_metrics(metrics)
     metrics_to_save["evaluation_time"] = end_time - start_time
-    if torch.cuda.is_available():
-        metrics_to_save["peak_gpu_mem_bytes"] = int(torch.cuda.max_memory_allocated())
 
     metrics_path = resolved_results_dir / "metrics.yaml"
     metrics_path.write_text(OmegaConf.to_yaml(metrics_to_save))

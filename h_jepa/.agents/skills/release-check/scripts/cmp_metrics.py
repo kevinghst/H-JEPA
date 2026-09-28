@@ -6,7 +6,7 @@ import yaml
 
 a, b = yaml.safe_load(open(sys.argv[1])), yaml.safe_load(open(sys.argv[2]))
 for k in sorted(set(a) | set(b)):
-    if "evaluation_time" in k or "wall_clock" in k or k == "peak_gpu_mem_bytes":
+    if "evaluation_time" in k or "wall_clock" in k:
         continue
     x, y = a.get(k, "<none>"), b.get(k, "<none>")
     same = x == y or (isinstance(x, float) and isinstance(y, float)

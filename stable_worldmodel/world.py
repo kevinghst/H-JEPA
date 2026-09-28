@@ -27,13 +27,6 @@ from stable_worldmodel.policy import Policy
 from .wrapper import MegaWrapper, SyncWorld, VariationWrapper
 
 
-STATE_DISTANCE_METRICS = (
-    'state_l2',
-    'state_normalized_l2',
-    'non_proprio_state_l2',
-    'non_proprio_state_normalized_l2',
-)
-
 EVAL_STATE_MODES = ('dataset_full', 'xy_neutral')
 ORIGINAL_LENGTH_KEY = '_original_length'
 ORIGINAL_LENGTHS_KEY = '_original_lengths'
@@ -67,36 +60,6 @@ def _make_env(env_name, max_episode_steps, wrappers, **kwargs):
     return env
 
 
-def _last_history_frame(value: Any) -> np.ndarray | None:
-    if value is None:
-        return None
-
-    value = np.asarray(value)
-    while value.ndim > 2:
-        value = value[:, -1]
-
-    if value.ndim != 2:
-        return None
-
-    return value.astype(np.float64, copy=False)
-
-
-def _mean_l2(final_value: np.ndarray, goal_value: np.ndarray) -> float:
-    if final_value.size == 0 or goal_value.size == 0:
-        return float('nan')
-
-    distances = np.linalg.norm(final_value - goal_value, axis=1)
-    if not np.isfinite(distances).any():
-        return float('nan')
-
-    return float(np.nanmean(distances))
-
-
-def _as_numpy(value: Any) -> np.ndarray:
-    if torch.is_tensor(value):
-        return value.detach().cpu().numpy()
-    return np.asarray(value)
-
 
 def _find_env_method(env: gym.Env, method_name: str) -> Callable | None:
     method_owner = env
@@ -121,92 +84,6 @@ def _validate_eval_state_mode(mode: str, mode_name: str) -> None:
         raise ValueError(
             f'{mode_name} must be one of {EVAL_STATE_MODES}, got {mode!r}.'
         )
-
-
-def _expert_action_l2(
-    executed_action_batches: list[np.ndarray],
-    data: Sequence[dict[str, Any]],
-    comparison_horizon: int | None,
-    action_dims: Sequence[int] | None,
-) -> float | None:
-    if not executed_action_batches:
-        return None
-
-    if comparison_horizon is not None and comparison_horizon < 0:
-        raise ValueError('expert_action_distance_horizon must be non-negative')
-
-    executed_actions = np.stack(executed_action_batches, axis=1)
-    if executed_actions.shape[0] != len(data):
-        raise ValueError(
-            'Executed action batch size does not match loaded eval trajectories'
-        )
-
-    distances: list[np.ndarray] = []
-    for env_idx, episode in enumerate(data):
-        expert_actions = episode.get('action')
-        if expert_actions is None:
-            return None
-
-        expert_actions = _as_numpy(expert_actions)
-        if expert_actions.ndim != executed_actions.ndim - 1:
-            raise ValueError(
-                'Expert action rank does not match executed action rank: '
-                f'{expert_actions.ndim} vs {executed_actions.ndim - 1}'
-            )
-        if expert_actions.shape[1:] != executed_actions.shape[2:]:
-            raise ValueError(
-                'Expert action shape does not match executed action shape: '
-                f'{expert_actions.shape[1:]} vs {executed_actions.shape[2:]}'
-            )
-
-        selected_executed_actions = executed_actions[env_idx]
-        selected_expert_actions = expert_actions
-        if action_dims is not None:
-            if not action_dims:
-                raise ValueError('expert_action_distance_dims cannot be empty')
-            action_dim_indices = np.asarray(action_dims, dtype=np.int64)
-            if np.any(action_dim_indices < 0):
-                raise ValueError(
-                    'expert_action_distance_dims must contain non-negative indices'
-                )
-            action_dim = selected_expert_actions.shape[-1]
-            if np.any(action_dim_indices >= action_dim):
-                raise ValueError(
-                    'expert_action_distance_dims index out of range for action dim '
-                    f'{action_dim}: {action_dim_indices.tolist()}'
-                )
-            selected_executed_actions = selected_executed_actions[..., action_dim_indices]
-            selected_expert_actions = selected_expert_actions[..., action_dim_indices]
-
-        original_lengths = episode.get(ORIGINAL_LENGTHS_KEY, {})
-        original_action_length = (
-            original_lengths.get('action')
-            if isinstance(original_lengths, dict)
-            else None
-        )
-        if original_action_length is None:
-            original_action_length = selected_expert_actions.shape[0]
-
-        horizon = min(
-            selected_executed_actions.shape[0],
-            selected_expert_actions.shape[0],
-            int(original_action_length),
-        )
-        if comparison_horizon is not None:
-            horizon = min(horizon, comparison_horizon)
-        if horizon == 0:
-            continue
-
-        action_delta = (
-            selected_executed_actions[:horizon]
-            - selected_expert_actions[:horizon]
-        )
-        distances.append(np.linalg.norm(action_delta, axis=-1))
-
-    if not distances:
-        return float('nan')
-
-    return float(np.mean(np.concatenate(distances)))
 
 
 def _episode_sequence_length(
@@ -316,106 +193,6 @@ def _pad_loaded_eval_trajectories(
     return padded
 
 
-def _transform_state(
-    state_value: np.ndarray,
-    process: dict[str, Any] | None,
-) -> np.ndarray | None:
-    processor = (process or {}).get('state')
-    if processor is None or not hasattr(processor, 'transform'):
-        return None
-
-    try:
-        return processor.transform(state_value)
-    except ValueError:
-        return None
-
-
-def _infer_non_proprio_state_mask(
-    state_value: np.ndarray | None,
-    proprio_value: np.ndarray | None,
-) -> np.ndarray | None:
-    if state_value is None or proprio_value is None:
-        return None
-    if state_value.ndim != 2 or proprio_value.ndim != 2:
-        return None
-    if state_value.shape[0] != proprio_value.shape[0]:
-        return None
-
-    is_proprio_dim = np.zeros(state_value.shape[1], dtype=bool)
-    for state_dim in range(state_value.shape[1]):
-        state_col = state_value[:, state_dim]
-        for proprio_dim in range(proprio_value.shape[1]):
-            proprio_col = proprio_value[:, proprio_dim]
-            valid = np.isfinite(state_col) & np.isfinite(proprio_col)
-            if not np.any(valid):
-                continue
-            matches = np.isclose(
-                state_col[valid],
-                proprio_col[valid],
-                rtol=1e-5,
-                atol=1e-6,
-            )
-            if np.mean(matches) >= 0.95:
-                is_proprio_dim[state_dim] = True
-                break
-
-    if not np.any(is_proprio_dim):
-        return None
-
-    non_proprio_mask = ~is_proprio_dim
-    if not np.any(non_proprio_mask):
-        return None
-
-    return non_proprio_mask
-
-
-def _state_distance_metrics(
-    final_state: np.ndarray | None,
-    goal_state: np.ndarray | None,
-    final_proprio: np.ndarray | None,
-    goal_proprio: np.ndarray | None,
-    process: dict[str, Any] | None,
-) -> dict[str, float]:
-    if final_state is None or goal_state is None:
-        return {}
-
-    metrics = {key: float('nan') for key in STATE_DISTANCE_METRICS}
-    metrics['state_l2'] = _mean_l2(final_state, goal_state)
-
-    final_state_normalized = _transform_state(final_state, process)
-    goal_state_normalized = _transform_state(goal_state, process)
-    if final_state_normalized is not None and goal_state_normalized is not None:
-        metrics['state_normalized_l2'] = _mean_l2(
-            final_state_normalized,
-            goal_state_normalized,
-        )
-
-    mask_state = final_state
-    mask_proprio = final_proprio
-    if mask_proprio is None and goal_proprio is not None:
-        mask_state = goal_state
-        mask_proprio = goal_proprio
-    elif goal_proprio is not None:
-        mask_state = np.concatenate([mask_state, goal_state], axis=0)
-        mask_proprio = np.concatenate([mask_proprio, goal_proprio], axis=0)
-
-    non_proprio_mask = _infer_non_proprio_state_mask(mask_state, mask_proprio)
-    if non_proprio_mask is None:
-        return metrics
-
-    metrics['non_proprio_state_l2'] = _mean_l2(
-        final_state[:, non_proprio_mask],
-        goal_state[:, non_proprio_mask],
-    )
-    if final_state_normalized is not None and goal_state_normalized is not None:
-        metrics['non_proprio_state_normalized_l2'] = _mean_l2(
-            final_state_normalized[:, non_proprio_mask],
-            goal_state_normalized[:, non_proprio_mask],
-        )
-
-    return metrics
-
-
 class World:
     """High-level manager for vectorized Gymnasium environments.
 
@@ -481,7 +258,6 @@ class World:
         self.rewards: np.ndarray | None = None
         self.terminateds: np.ndarray | None = None
         self.truncateds: np.ndarray | None = None
-        self.last_actions: Any | None = None
 
         if verbose > 0:
             logging.info(f'🌍🌍🌍 World {env_name} initialized 🌍🌍🌍')
@@ -546,7 +322,6 @@ class World:
             raise RuntimeError('No policy set. Call set_policy() first.')
 
         actions = self.policy.get_action(self.infos)
-        self.last_actions = actions
         (
             self.states,
             self.rewards,
@@ -1187,8 +962,6 @@ class World:
         process: dict[str, Any] | None = None,
         start_state_mode: str = 'dataset_full',
         goal_state_mode: str = 'dataset_full',
-        expert_action_distance_horizon: int | None = None,
-        expert_action_distance_dims: Sequence[int] | None = None,
     ) -> dict:
         """Evaluate the policy starting from states sampled from a dataset.
 
@@ -1466,34 +1239,11 @@ class World:
         )
         wall_clock_to_success = np.full(self.num_envs, np.nan, dtype=np.float64)
         steps_to_success = np.full(self.num_envs, np.nan, dtype=np.float64)
-        executed_action_batches: list[np.ndarray] = []
-        goal_xy = _last_history_frame(goal_step.get('goal_xy'))
-        goal_state = _last_history_frame(goal_step.get('goal_state'))
-        goal_proprio = _last_history_frame(goal_step.get('goal_proprio'))
-        final_xy = (
-            np.full_like(goal_xy, np.nan, dtype=np.float64)
-            if goal_xy is not None
-            else None
-        )
-        final_state = (
-            np.full_like(goal_state, np.nan, dtype=np.float64)
-            if goal_state is not None
-            else None
-        )
-        final_proprio = (
-            np.full_like(goal_proprio, np.nan, dtype=np.float64)
-            if goal_proprio is not None
-            else None
-        )
 
         eval_start_time = time.perf_counter()
         for i in range(eval_budget):
             self.infos.update(deepcopy(goal_step))
             self.step()
-            if self.last_actions is not None:
-                executed_action_batches.append(_as_numpy(self.last_actions).copy())
-
-            current_xy = _last_history_frame(self.infos.get('xy'))
             newly_successful = np.logical_and(
                 self.terminateds, np.isnan(wall_clock_to_success)
             )
@@ -1501,50 +1251,12 @@ class World:
                 time.perf_counter() - eval_start_time
             )
             steps_to_success[newly_successful] = i + 1
-            if np.any(newly_successful):
-                if final_xy is not None and current_xy is not None:
-                    final_xy[newly_successful] = current_xy[newly_successful]
-
-                current_state = _last_history_frame(self.infos.get('state'))
-                if final_state is not None and current_state is not None:
-                    final_state[newly_successful] = current_state[newly_successful]
-
-                current_proprio = _last_history_frame(self.infos.get('proprio'))
-                if final_proprio is not None and current_proprio is not None:
-                    current_proprio = self._match_proprio_dim(
-                        current_proprio,
-                        final_proprio.shape[-1],
-                        self.infos,
-                    )
-                    final_proprio[newly_successful] = current_proprio[
-                        newly_successful
-                    ]
 
             results['episode_successes'] = np.logical_or(
                 results['episode_successes'], self.terminateds
             )
             # for auto-reset
             self.envs.unwrapped._autoreset_envs = np.zeros((self.num_envs,))
-
-        current_xy = _last_history_frame(self.infos.get('xy'))
-        if final_xy is not None and current_xy is not None:
-            missing_xy = ~np.isfinite(final_xy).all(axis=1)
-            final_xy[missing_xy] = current_xy[missing_xy]
-
-        current_state = _last_history_frame(self.infos.get('state'))
-        if final_state is not None and current_state is not None:
-            missing_state = ~np.isfinite(final_state).all(axis=1)
-            final_state[missing_state] = current_state[missing_state]
-
-        current_proprio = _last_history_frame(self.infos.get('proprio'))
-        if final_proprio is not None and current_proprio is not None:
-            current_proprio = self._match_proprio_dim(
-                current_proprio,
-                final_proprio.shape[-1],
-                self.infos,
-            )
-            missing_proprio = ~np.isfinite(final_proprio).all(axis=1)
-            final_proprio[missing_proprio] = current_proprio[missing_proprio]
 
         n_episodes = len(ep_idx_arr)
 
@@ -1561,25 +1273,6 @@ class World:
             if successful_steps.size > 0
             else float('nan')
         )
-        if final_xy is not None and goal_xy is not None:
-            results['xy_goal_l2'] = _mean_l2(final_xy, goal_xy)
-        results.update(
-            _state_distance_metrics(
-                final_state,
-                goal_state,
-                final_proprio,
-                goal_proprio,
-                process,
-            )
-        )
-        expert_action_l2 = _expert_action_l2(
-            executed_action_batches,
-            data,
-            expert_action_distance_horizon,
-            expert_action_distance_dims,
-        )
-        if expert_action_l2 is not None:
-            results['expert_action_l2'] = expert_action_l2
 
         if results['seeds'] is not None:
             assert np.unique(results['seeds']).shape[0] == n_episodes, (

@@ -27,7 +27,8 @@ IGNORED = ("hydra", "sweep", "wandb", "policy", "seed", "output", "cache_dir", "
            "proprio_ood_stats_path", "defaults")
 REMOVED = [r".*\.cost\..*", r".*\.warm_start$", r".*\.horizon_decay_ratio$", r".*\.uncertainty_cost_weight$",
            r"eval\.(save_video|save_plots)$", r"solver\..*\.seed$", r"solver\.seed$",
-           r".*\.action_cost_space$", r"eval\.batch_eval$"]
+           r".*\.action_cost_space$", r"eval\.batch_eval$",
+           r"eval\.expert_action_distance_(horizon|dims)$"]
 
 
 def source(env, planner):

@@ -24,8 +24,7 @@ python $S/verify_eval.py           # 28 planning configs vs the eval_config.yaml
 ```
 
 Expected: every H-JEPA/HWM config and every planning config prints `IDENTICAL`. The four LeWM
-configs have known behavior-neutral differences: `precompute_levels` (paper runs used the default
-`true`; for one level both paths are equivalent up to RNG draws), `level1.lr` (equals `optimizer.lr`),
+configs have known behavior-neutral differences: `level1.lr` (equals `optimizer.lr`),
 `trainer.precision` (`bf16` is Lightning's alias of `bf16-mixed`), dataloader workers/prefetch,
 `save_every_n_epochs`, `level1.probes.enabled` (online probes are diagnostics), Ant's
 `val_total_transitions` (validation only), FourRoom's `max_train_batches_total: null`, Push-T's
@@ -54,11 +53,11 @@ Only Cube evals are deterministic run to run. Push-T, Ant and FourRoom evals are
 resets, FourRoom distractor motion): the same code gives different trajectories, even different
 success, so never diff those. Reference values (paper checkpoints, 3 episodes):
 
-| command | success | expert_action_l2 |
-|---|---|---|
-| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-10-2/0/seed42/model_object.ckpt` | [T, F, F] | 0.7225707769393921 |
-| `eval.py --config-name cube_flat eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/7-28-1/ogb_level1_seed42__stage1/ogb_level1_seed42__stage1_object.ckpt` | [F, F, F] | 1.0735117197036743 |
-| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-12-8/0/seed42/model_object.ckpt` | [T, F, F], steps 22 | 0.8509177565574646 |
+| command | success |
+|---|---|
+| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-10-2/0/seed42/model_object.ckpt` | [T, F, F] |
+| `eval.py --config-name cube_flat eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/7-28-1/ogb_level1_seed42__stage1/ogb_level1_seed42__stage1_object.ckpt` | [F, F, F] |
+| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-12-8/0/seed42/model_object.ckpt` | [T, F, F], steps 22 |
 
 Add `output.dir=$(mktemp -d)`. These cover flat, hierarchical (3 levels with the top one skipped)
 and projected-cost (4-level model) planning. Compare two metrics files with

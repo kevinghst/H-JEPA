@@ -81,11 +81,6 @@ eval:
   traj_sampling_mode: random
   pickup_height_delta: 0.02
   eval_budget: 30
-  expert_action_distance_horizon: 15
-  expert_action_distance_dims:
-  - 0
-  - 1
-  - 2
   img_size: 224
   dataset_name: cube_single_expert_val
   callables:

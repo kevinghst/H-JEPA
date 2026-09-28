@@ -95,8 +95,6 @@ eval:
   traj_sampling_mode: stratified
   goal_offset_steps: 75
   eval_budget: 90
-  expert_action_distance_horizon: null
-  expert_action_distance_dims: null
   img_size: 224
   dataset_name: pusht_expert_train
   callables:

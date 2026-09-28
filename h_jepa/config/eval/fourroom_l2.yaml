@@ -111,10 +111,6 @@ eval:
   goal_offset_steps: 60
   traj_sampling_mode: random
   eval_budget: 210
-  expert_action_distance_horizon: 15
-  expert_action_distance_dims:
-  - 0
-  - 1
   img_size: 224
   dataset_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
   callables:

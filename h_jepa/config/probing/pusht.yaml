@@ -67,7 +67,6 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-  precompute_levels: false
 eval_datasets:
   val:
     name: pusht_expert_val
@@ -100,4 +99,3 @@ eval_datasets:
     level1:
       frameskip: 1
       num_steps: 1
-    precompute_levels: false

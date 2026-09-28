@@ -189,7 +189,6 @@ def hjepa_forward(
         batch,
         key="pixels",
         levels_to_encode=int(cfg.num_levels),
-        precompute_levels=bool(cfg.data.dataset.get("precompute_levels", True)),
     )
     add_probe_targets(output, cfg)
     if print_tensor_shapes:

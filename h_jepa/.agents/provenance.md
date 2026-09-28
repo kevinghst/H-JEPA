@@ -60,6 +60,9 @@ Generated from the saved `eval_config.yaml` of the paper evals, with paths made 
   and the Push-T/HWM 4-level points come from those) used planner seed 42 for every model.
 - Push-T, Ant and FourRoom planning evals are not bit-reproducible run to run, even with the paper
   code; Cube is.
+- The four LeWM paper runs used the dataset's `precompute_levels=true` loader (level-1 crop in the
+  dataset); the release only has the level-1-stream loader (crop in the model). For one level the two
+  are equivalent up to RNG draws.
 
 ## Reference numbers
 
