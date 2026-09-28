@@ -26,7 +26,11 @@ REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|de
            r"level\d+\.wm\.type$", r"level\d+\.(encoder\.|encoder\.pixel_encoder\.encoder\.)resnet9$",
            r"data\.dataset\.(random_waypoints|augment_static_window_prob|precompute_levels)$",
            r"data\.dataset\.level\d+\.(load|sample_range_low|sample_range_high)$",
-           r"(encoder_resnet9|projector_loss_weight|train_value_function)$", r"optimizer\.decoder\..*"]
+           r"(encoder_resnet9|projector_loss_weight|train_value_function)$", r"optimizer\.decoder\..*",
+           r"(local_cache_dir|train_split)$", r"level\d+\.encoder\.residual$", r"level\d+\.action_pooler\.uniform_input$",
+           r"level\d+\.wm\.(xy|qpos|qvel|observation|state|block_pos|block_ori|block_xy|agent_xy|agent_vel|effector_pos|"
+           r"effector_yaw|gripper|arm_joint_pos|arm_joint_vel|gripper_vel|distractor0_xy|min_distractor_dist)_dim$",
+           r"level([2-9])\.wm\.action_dim$", r"level\d+\.wm\.proprio_dim$"]
 
 
 def main():

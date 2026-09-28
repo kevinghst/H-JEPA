@@ -253,42 +253,11 @@ class MLP(nn.Module):
         """
         x: (B*T, D)
         """
-        x = self.net(x)
-        final_norm = getattr(self, "final_norm", None) #backward compatibility
-        if final_norm is not None:
-            x = final_norm(x)
-        return x
-
-
-class _ResidualMLPBlock(nn.Module):
-    """One out_dim -> hidden_dim -> out_dim residual block (dim-preserving)."""
-
-    def __init__(self, dim, hidden_dim, act_fn=nn.GELU, residual=True):
-        super().__init__()
-        self.input_norm = nn.LayerNorm(dim)
-        self.fc1 = nn.Linear(dim, hidden_dim)
-        self.act = act_fn()
-        self.fc2 = nn.Linear(hidden_dim, dim)
-        self.use_residual = bool(residual)
-
-    def forward(self, x):
-        residual = x
-        x = self.input_norm(x)
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        if self.use_residual:
-            x = x + residual
-        return x
+        return self.final_norm(self.net(x))
 
 
 class ResidualLatentMLP(nn.Module):
-    """Residual MLP for refining latent vectors.
-
-    num_blocks stacks (num_blocks - 1) extra dim-preserving residual blocks
-    after the base block. num_blocks=1 (default) keeps the original submodules
-    unchanged, so existing configs and pickled checkpoints are unaffected.
-    """
+    """MLP for refining latent vectors."""
 
     def __init__(
         self,
@@ -297,8 +266,6 @@ class ResidualLatentMLP(nn.Module):
         output_dim=None,
         act_fn=nn.GELU,
         final_ln=True,
-        residual=False,
-        num_blocks=1,
     ):
         super().__init__()
         out_dim = output_dim or input_dim
@@ -306,24 +273,13 @@ class ResidualLatentMLP(nn.Module):
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.act = act_fn()
         self.fc2 = nn.Linear(hidden_dim, out_dim)
-        self.use_residual = bool(residual) and int(input_dim) == int(out_dim)
-        self.extra_blocks = nn.ModuleList(
-            _ResidualMLPBlock(out_dim, hidden_dim, act_fn, bool(residual))
-            for _ in range(num_blocks - 1)
-        )
         self.final_norm = nn.LayerNorm(out_dim) if final_ln else nn.Identity()
 
     def forward(self, x):
-        residual = x
         x = self.input_norm(x)
         x = self.fc1(x)
         x = self.act(x)
         x = self.fc2(x)
-        if self.use_residual:
-            x = x + residual
-        # getattr guard: pickled pre-num_blocks checkpoints have no extra_blocks
-        for block in getattr(self, "extra_blocks", ()):
-            x = block(x)
         return self.final_norm(x)
 
 
@@ -411,7 +367,3 @@ class CLSDecoder(nn.Module):
         img = img.reshape(B, 3, H * self.patch_size, W * self.patch_size)
 
         return img
-
-
-# Keep ARPredictor reachable from models.module for legacy checkpoint loading.
-from .predictors.predictors import ARPredictor

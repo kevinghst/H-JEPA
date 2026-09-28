@@ -24,9 +24,10 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    GPU kernels. Fix or document before release.
 8. Ant eval tasks: regeneration does not reproduce the original file (see Checks). Ship the original
    `expert_grid_d3_n50.pt` (recommended) or accept regenerated tasks?
-9. Release pretrained checkpoints? If yes: add a README section, and keep the legacy module aliases
-   (`register_legacy_checkpoint_module_aliases`) and the `lejepa_training_normalizer_v1` format tag
-   that the `*_object.ckpt` / `normalizer.pt` files depend on.
+9. Release pretrained checkpoints? If yes: add a README section, and keep the
+   `lejepa_training_normalizer_v1` format tag and the `JEPA.__setstate__` shim that the
+   `*_object.ckpt` / `normalizer.pt` files depend on (the legacy module aliases were not needed: all
+   84 paper checkpoints load without them).
 
 ## Pending work
 
@@ -111,6 +112,25 @@ Round 4
   (now `???` like the others); `Dataset` base class merged into `HDF5Dataset`, its `transform`
   constructor arg (the attribute stays: training and probing set it), `load_episode`, the
   `kernel_size` alias
+- training/models: legacy checkpoint module aliases (all 84 paper checkpoints pickle only `models.*`
+  paths) and the `ARPredictor` re-export in `models.module`; `SLURM_TMPDIR` / `local_cache_dir`, the
+  no-val `random_split` / `train_split` path, CPU image resizing (stored images always match
+  `img_size`), filling `wm.<col>_dim` from the dataset and the unread `wm.*_dim` keys (kept:
+  level-1 `action_dim`, Ant's `proprio_dim` / `proprio_emb_dim`, `embed_dim`), in-training probe
+  input-stream / architecture / `prober` optimizer options, the empty `global` param group and lr
+  fallbacks; `print_tensor_shapes`, `kernel_size` / `num_preds` guards, fusion-builder and projector
+  fallbacks, predictor / action-encoder type dispatch, `_add_pred_stream_outputs`; JEPA
+  `proprio_encoder` / `projector` / `pred_proj` / `extra_encoders` and their branches,
+  `rollout_action_embeddings`, `encode(extra_keys, temporal_window_size)`, the
+  `goal_{pixel,proprio}_embed_0` writes, the `get_cost_components` split; `MLP.final_norm` /
+  `extra_blocks` getattr shims, `ResidualLatentMLP` `residual` / `num_blocks` (+ `_ResidualMLPBlock`,
+  config key `residual`); `SequenceEncoder` `stochastic` / `use_cls` / `step_mlp` / `uniform_input`
+  (+ config key) / `action_masks` / truncation; `models/encoders/vit.py` (custom size configs;
+  `create_hf_vit` is called directly, without `pretrained`), the `models.encoders` re-exports;
+  `MixedHDF5Dataset.source_names`; `print_parameter_counts`; `PlanningEvalCallback` periodic /
+  on-train-start evals, `config_path`, multi-seed aggregation and `_se` keys (the end-of-training
+  `metrics.yaml` now has the same schema as `eval.py`'s; planner seed = `cfg.seed`; config keys
+  `planning_eval.{every_n_epochs,run_on_train_start,seeds}`)
 
 ## Kept on purpose
 
@@ -126,6 +146,9 @@ Round 4
 - multi-step rollout loss, pixel/proprio loss components and the
   legacy flat loss format, intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per
   request).
+- `JEPA.__setstate__` `temporal_kernel_size` -> `temporal_window_size` shim: the four LeWM paper
+  checkpoints (level 1, all seeds) still carry the old attribute (the audit wrongly listed it as unused).
+- `CLSDecoder` in `models.module`: 3 paper checkpoints pickle it (probing also uses it).
 - callables `in_dataset: false` args (Cube's constant `cube_id: 0`; the audit wrongly listed it as
   unused).
 
@@ -166,32 +189,10 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
   path (medium).
 
 ### Safe dead code: training and models
-- [x] Legacy checkpoint aliases (`register_legacy_checkpoint_module_aliases` in `utils.py` and its
-  duplicate in `policy.py`; `ARPredictor` re-export in `module.py`): paper checkpoints pickle only
-  `models.*` paths. Keep the `lejepa_training_normalizer_v1` tag (see open question 9).
-- [x] `main_hjepa.py`: `SLURM_TMPDIR` / `local_cache_dir`, no-val `random_split` / `train_split`,
-  CPU image resize + `_can_skip_cpu_image_preprocess`, filling `wm.<col>_dim` from the dataset
-  (+ unread `xy_dim`, `qpos_dim`, `block_*_dim`... config keys), probe input-stream options and the
-  `prober` optimizer group, empty `global` param group and lr fallbacks, `rand_str` run id (medium).
-- [x] `hjepa_utils.py`: `print_tensor_shapes`, `kernel_size` / `num_preds` legacy guards, fusion
-  builder fallbacks, `projector` / `predictor_projector` / `embed_dim` fallbacks, non-transformer
-  predictor and `identity` action-encoder types, `_add_pred_stream_outputs`.
-- [x] `models/jepa.py`: `proprio_encoder` / `projector` / `pred_proj` / `extra_encoders` args and
-  branches, `_run_encoder` / `_split_encoder_output` method wrappers, `temporal_kernel_size`
-  unpickle shim, `rollout_action_embeddings`, the never-passed `extra_keys` / `temporal_window_size`
-  params of `encode`, `goal_{pixel,proprio}_embed_0` writes. Keep the module-level
-  `_split_encoder_output(allow_cls_token=...)` and the window chunking (window_size > 1).
-- [x] `models/module.py`: `final_norm` / `extra_blocks` getattr shims, `num_blocks` +
-  `_ResidualMLPBlock`, `residual`; plain `Block` / `c is None` path and 4-D `Embedder` input (medium).
-- [x] `models/encoders`: `vit.py` size-config / pretrained branches; `seq_encoder.py` options
-  (`stochastic`, `action_masks`, `use_cls=False` / `masked_mean`, `step_mlp=False`, truncation);
-  unused `encoders/__init__` exports. Keep `SequenceEncoder` / `FlattenedSequenceEncoder` and the
-  `seq_encoder` type (window_size > 1 state encoder).
-- [x] `data.py`: `MixedHDF5Dataset.source_names`; defensive checks (medium).
-- [x] `utils.py`: `print_parameter_counts`; `PlanningEvalCallback` periodic / on-train-start eval
-  (`every_n_epochs`, `run_on_train_start`), `config_path`, multi-seed aggregation and `_se` keys
-  (always one seed; it also overwrites the per-seed `metrics.yaml` with a different schema);
-  per-epoch `*_epoch_N_object.ckpt` dumps (medium).
+- [x] `main_hjepa.py`: `rand_str` run id (medium).
+- [x] `models/module.py`: plain `Block` / `c is None` path and 4-D `Embedder` input (medium).
+- [x] `data.py`: defensive checks (medium).
+- [x] `utils.py`: per-epoch `*_epoch_N_object.ckpt` dumps (medium).
 - [x] `hjepa_forward` no-grad logging extras (`mse`, `l1`, `dim_mean/std/min/max`) (medium).
 
 ### Safe dead code: probing (probing itself is kept)

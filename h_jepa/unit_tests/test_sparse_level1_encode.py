@@ -31,7 +31,7 @@ def build_model(num_levels, stride, window):
             if window > 1:
                 level_cfg.encoder = OmegaConf.create({
                     "type": "seq_encoder", "output_dim": 384, "input_dim": 384,
-                    "max_chunk": window, "uniform_input": True,
+                    "max_chunk": window,
                     "d_model": 128, "nhead": 4, "num_layers": 1,
                     "projector": {"type": "identity"},
                 })

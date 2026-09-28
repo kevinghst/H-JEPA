@@ -27,8 +27,7 @@ Expected: every H-JEPA/HWM config and every planning config prints `IDENTICAL`. 
 configs have known behavior-neutral differences: `level1.lr` (equals `optimizer.lr`),
 `trainer.precision` (`bf16` is Lightning's alias of `bf16-mixed`), dataloader workers/prefetch,
 `save_every_n_epochs`, `level1.probes.enabled` (online probes are diagnostics), Ant's
-`val_total_transitions` (validation only), FourRoom's `max_train_batches_total: null`, Push-T's
-`train_split` (unused because a val set is set). Keys removed on purpose during the cleanup are
+`val_total_transitions` (validation only), FourRoom's `max_train_batches_total: null`. Keys removed on purpose during the cleanup are
 listed in the scripts' `REMOVED` patterns; when you remove another config key, add it there.
 
 ## 2. Training step is unchanged (a minute, GPU)

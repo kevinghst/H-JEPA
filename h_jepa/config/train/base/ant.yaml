@@ -34,12 +34,10 @@ data:
     level1:
       frameskip: 5
       num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
-local_cache_dir: true
 output_model_name: model
 subdir: ${output_model_name}/seed${seed}
 quick_debug: false
 num_workers: 6
-train_split: 0.95
 seed: 42
 img_size: 64
 patch_size: 4
@@ -77,12 +75,8 @@ wandb:
     log_model: false
 planning_eval:
   enabled: true
-  every_n_epochs: 0
   config_name: ???
   output_subdir: planning_eval
-  seeds:
-  - ${seed}
-  run_on_train_start: false
   run_on_train_end: true
 final_probing_decoding_eval:
   enabled: true
@@ -103,9 +97,6 @@ level1:
     use_proprio: true
     proprio_emb_dim: 128
     action_dim: 8
-    xy_dim: 2
-    qpos_dim: 15
-    qvel_dim: 14
     proprio_dim: 27
   encoder:
     projector:

@@ -575,14 +575,6 @@ class HierarchicalSolver:
             if 'proprio' in info_dict:
                 encoded['proprio'] = info_dict['proprio']
 
-        level1 = self.level_models[0]
-        if getattr(level1, 'proprio_encoder', None) is not None and 'proprio' not in encoded:
-            missing_key = 'goal_proprio' if key == 'goal' else 'proprio'
-            raise KeyError(
-                f"Level 1 JEPA requires proprio for planning, but '{missing_key}' "
-                "is missing from info_dict."
-            )
-
         return encoded
 
     def _level_action_targets(

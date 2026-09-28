@@ -31,7 +31,6 @@ from models.module import CLSDecoder
 from models.probers import build_prober
 from utils import (
     load_training_config_for_checkpoint,
-    register_legacy_checkpoint_module_aliases,
     resolve_model_checkpoint_path,
 )
 
@@ -89,7 +88,6 @@ def _normalizer_path_for_policy(policy_path: str | Path) -> Path:
 
 def _load_policy(policy, cache_dir, config_path=None):
     ckpt_path = resolve_model_checkpoint_path(str(policy), cache_dir)
-    register_legacy_checkpoint_module_aliases()
     model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     train_cfg = load_training_config_for_checkpoint(ckpt_path, config_path)
     return model, ckpt_path, train_cfg

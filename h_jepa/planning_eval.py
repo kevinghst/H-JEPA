@@ -21,10 +21,7 @@ from data import (
 )
 from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
 from stable_worldmodel.solver.hierarchical_solver import HierarchicalSolver, _build_hierarchical_solver
-from utils import (
-    register_legacy_checkpoint_module_aliases,
-    resolve_model_checkpoint_path,
-)
+from utils import resolve_model_checkpoint_path
 
 
 def img_transform(cfg):
@@ -236,7 +233,6 @@ def _build_policy(
     if model is None:
         if _is_hierarchical_solver(cfg):
             ckpt_path = resolve_model_checkpoint_path(cfg.policy, cfg.cache_dir)
-            register_legacy_checkpoint_module_aliases()
             model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         else:
             model = swm.policy.AutoCostModel(cfg.policy)

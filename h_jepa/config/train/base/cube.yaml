@@ -56,11 +56,9 @@ data:
       frameskip: 5
       num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
 quick_debug: false
-local_cache_dir: true
 output_model_name: model
 subdir: ${output_model_name}/seed${seed}
 num_workers: 12
-train_split: 0.95
 seed: 42
 img_size: 224
 patch_size: 14
@@ -98,12 +96,8 @@ wandb:
     log_model: false
 planning_eval:
   enabled: true
-  every_n_epochs: 0
   config_name: ???
   output_subdir: planning_eval
-  seeds:
-  - ${seed}
-  run_on_train_start: false
   run_on_train_end: true
 final_probing_decoding_eval:
   enabled: true
@@ -123,16 +117,6 @@ level1:
     embed_dim: 192
     use_proprio: false
     action_dim: 5
-    observation_dim: 28
-    proprio_dim: 19
-    block_pos_dim: 3
-    block_ori_dim: 6
-    effector_pos_dim: 3
-    effector_yaw_dim: 2
-    gripper_dim: 2
-    arm_joint_pos_dim: 6
-    arm_joint_vel_dim: 6
-    gripper_vel_dim: 1
   encoder:
     type: vit
     scale: ${encoder_scale}

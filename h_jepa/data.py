@@ -18,7 +18,6 @@ class MixedHDF5Dataset:
         self,
         datasets: list,
         selected_episodes: list[np.ndarray],
-        source_names: list[str] | None = None,
     ):
         if not datasets:
             raise ValueError("MixedHDF5Dataset requires at least one source dataset.")
@@ -28,10 +27,6 @@ class MixedHDF5Dataset:
         self.datasets = list(datasets)
         self.selected_episodes = [
             np.asarray(episodes, dtype=np.int64) for episodes in selected_episodes
-        ]
-        self.source_names = source_names or [
-            Path(getattr(dataset, "h5_path", f"source_{idx}")).stem
-            for idx, dataset in enumerate(self.datasets)
         ]
         self.cumulative_sizes = np.cumsum([len(dataset) for dataset in self.datasets])
         self._transform = None
@@ -204,7 +199,6 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None):
     cfg.pop("name", None)
     source_datasets = []
     source_proportions = []
-    source_names = []
 
     for source in sources:
         if OmegaConf.is_config(source):
@@ -226,7 +220,6 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None):
             swm.data.HDF5Dataset(**child_cfg, cache_dir=cache_dir)
         )
         source_proportions.append(proportion)
-        source_names.append(str(name))
 
     selected_episodes = _select_mixed_episode_subsets(
         source_datasets,
@@ -242,7 +235,7 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None):
             if episode in selected
         ]
 
-    return MixedHDF5Dataset(source_datasets, selected_episodes, source_names)
+    return MixedHDF5Dataset(source_datasets, selected_episodes)
 
 
 def _select_mixed_episode_subsets(

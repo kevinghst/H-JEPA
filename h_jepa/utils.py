@@ -1,30 +1,9 @@
-import importlib
 import logging
-import math
-import sys
 import threading
 import torch
 from pathlib import Path
 from lightning.pytorch.callbacks import Callback
 from omegaconf import OmegaConf
-
-
-def register_legacy_checkpoint_module_aliases() -> None:
-    """Map legacy module paths to the reorganized model package for torch.load."""
-    alias_pairs = {
-        "jepa": "models.jepa",
-        "hjepa": "models.hjepa",
-        "module": "models.module",
-        "seq_encoder": "models.encoders.seq_encoder",
-        "spt_backbone_utils": "models.encoders.vit",
-        "unit_tests.spt_backbone_utils": "models.encoders.vit",
-        "factories.build_encoder": "models.encoders.build_encoder",
-    }
-
-    for legacy_name, current_name in alias_pairs.items():
-        if legacy_name in sys.modules:
-            continue
-        sys.modules[legacy_name] = importlib.import_module(current_name)
 
 
 def resolve_model_checkpoint_path(run_name: str, cache_dir: str | None):
@@ -87,24 +66,6 @@ def load_training_config_for_checkpoint(
     config_path: str | Path | None = None,
 ):
     return OmegaConf.load(resolve_checkpoint_config_path(ckpt_path, config_path))
-
-
-def print_parameter_counts(
-    module: torch.nn.Module,
-    name: str | None = None,
-) -> tuple[int, int]:
-    """Print and return trainable and total parameter counts for a module."""
-    total_params = sum(param.numel() for param in module.parameters())
-    trainable_params = sum(
-        param.numel() for param in module.parameters() if param.requires_grad
-    )
-
-    module_name = name or module.__class__.__name__
-    print(
-        f"{module_name} parameters: "
-        f"trainable={trainable_params:,}, total={total_params:,}"
-    )
-    return trainable_params, total_params
 
 
 # ---------------------------------------------------------------------------
@@ -244,100 +205,28 @@ class TrainBatchLimitCallback(Callback):
 
 
 class PlanningEvalCallback(Callback):
+    """Run the planning eval once at the end of training, with planner seed = model seed."""
+
     def __init__(
         self,
         *,
         enabled,
-        every_n_epochs,
         eval_cfg,
         run_dir,
+        seed,
         output_subdir="planning_eval",
-        run_on_train_start=False,
         run_on_train_end=True,
     ):
         super().__init__()
         self.enabled = enabled
-        self.every_n_epochs = int(every_n_epochs)
         self.eval_cfg = eval_cfg
         self.run_dir = Path(run_dir)
+        self.seed = int(seed)
         self.output_subdir = output_subdir
-        self.run_on_train_start = run_on_train_start
         self.run_on_train_end = run_on_train_end
-        self._last_eval_epoch = None
-
-    def _should_run(self, epoch):
-        if not self.enabled or self.every_n_epochs <= 0:
-            return False
-        if epoch <= 0 or epoch % self.every_n_epochs != 0:
-            return False
-        return self._last_eval_epoch != epoch
-
-    def _planning_eval_seeds(self):
-        seeds = self.eval_cfg.get("seeds", [42])
-        if seeds is None:
-            return [42]
-        if isinstance(seeds, (int, float)):
-            return [int(seeds)]
-        return [int(seed) for seed in seeds] or [42]
-
-    @staticmethod
-    def _standard_error(values):
-        if len(values) <= 1:
-            return 0.0
-        mean = sum(values) / len(values)
-        var = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
-        return math.sqrt(var) / math.sqrt(len(values))
-
-    @staticmethod
-    def _is_scalar_number(value):
-        if isinstance(value, bool):
-            return True
-        if isinstance(value, (int, float)):
-            return math.isfinite(float(value))
-        if hasattr(value, "item") and not getattr(value, "shape", ()):
-            try:
-                return math.isfinite(float(value.item()))
-            except (TypeError, ValueError):
-                return False
-        return False
-
-    @staticmethod
-    def _as_float(value):
-        if isinstance(value, bool):
-            return float(value)
-        if hasattr(value, "item") and not getattr(value, "shape", ()):
-            return float(value.item())
-        return float(value)
-
-    @staticmethod
-    def _finite_flat_values(value):
-        if value is None:
-            return []
-        if hasattr(value, "detach"):
-            value = value.detach().cpu().tolist()
-        elif hasattr(value, "tolist"):
-            value = value.tolist()
-
-        stack = [value]
-        values = []
-        while stack:
-            item = stack.pop()
-            if isinstance(item, (list, tuple)):
-                stack.extend(item)
-                continue
-            try:
-                scalar = float(item)
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(scalar):
-                values.append(scalar)
-        return values
 
     @staticmethod
     def _set_planning_seed(cfg, seed):
-        if cfg.get("solver", None) is None:
-            return
-
         solver_cfg = cfg.solver
         if solver_cfg.get("solvers", None) is not None:
             for level_solver in solver_cfg.solvers.values():
@@ -346,112 +235,31 @@ class PlanningEvalCallback(Callback):
 
         solver_cfg.seed = int(seed)
 
-    def _apply_eval_overrides(self, cfg):
-        overrides = self.eval_cfg.get("overrides", None)
-        if overrides is None:
-            return cfg
-        return OmegaConf.merge(cfg, overrides)
-
-    def _aggregate_seed_metrics(self, metrics_by_seed):
-        aggregate = {
-            "planning_eval_num_seeds": len(metrics_by_seed),
-            "planning_eval_seeds": [int(seed) for seed, _ in metrics_by_seed],
-        }
-
-        keys = sorted({key for _, metrics in metrics_by_seed for key in metrics})
-        for key in keys:
-            if key == "steps_to_success_success_only":
-                continue
-            values = []
-            for _, metrics in metrics_by_seed:
-                value = metrics.get(key)
-                if self._is_scalar_number(value):
-                    values.append(self._as_float(value))
-
-            if not values:
-                continue
-
-            mean = sum(values) / len(values)
-            aggregate[key] = mean
-            aggregate[f"{key}_se"] = self._standard_error(values)
-
-        steps_to_success = []
-        saw_steps_to_success = False
-        for _, metrics in metrics_by_seed:
-            if "steps_to_success" in metrics:
-                saw_steps_to_success = True
-                steps_to_success.extend(
-                    self._finite_flat_values(metrics.get("steps_to_success"))
-                )
-            elif "steps_to_success_success_only" in metrics:
-                saw_steps_to_success = True
-                steps_to_success.extend(
-                    self._finite_flat_values(
-                        metrics.get("steps_to_success_success_only")
-                    )
-                )
-        if steps_to_success:
-            aggregate["steps_to_success_success_only"] = (
-                sum(steps_to_success) / len(steps_to_success)
-            )
-            aggregate["steps_to_success_success_only_se"] = self._standard_error(
-                steps_to_success
-            )
-        elif saw_steps_to_success:
-            aggregate["steps_to_success_success_only"] = float("nan")
-            aggregate["steps_to_success_success_only_se"] = float("nan")
-
-        return aggregate
-
-    @staticmethod
-    def _write_metrics(path, metrics):
-        path.write_text(OmegaConf.to_yaml(OmegaConf.create(metrics)))
-
-    def _log_metrics(self, trainer, metrics, step, *, prefix_suffix=None):
+    def _log_metrics(self, trainer, metrics, step):
         logger = trainer.logger
         if logger is None:
             return
 
-        eval_name = self.eval_cfg.get("config_name", None)
-        if eval_name is None and self.eval_cfg.get("config_path", None) is not None:
-            eval_name = Path(self.eval_cfg.config_path).stem
-        prefix = f"planning_eval/{eval_name or 'eval'}"
-        if prefix_suffix is not None:
-            prefix = f"{prefix}/{prefix_suffix}"
+        prefix = f"planning_eval/{self.eval_cfg.config_name}"
         scalar_metrics = {}
         for key, value in metrics.items():
             if isinstance(value, bool):
                 scalar_metrics[f"{prefix}/{key}"] = float(value)
             elif isinstance(value, (int, float)):
                 scalar_metrics[f"{prefix}/{key}"] = value
-            elif hasattr(value, "item") and not getattr(value, "shape", ()):
-                scalar_metrics[f"{prefix}/{key}"] = value.item()
 
         if scalar_metrics:
             logger.log_metrics(scalar_metrics, step=step)
 
-    def _run_eval(
-        self,
-        trainer,
-        pl_module,
-        epoch,
-        *,
-        planning_seed=None,
-        results_dir=None,
-        log_metrics=True,
-    ):
+    def _run_eval(self, trainer, pl_module, epoch):
         from planning_eval import load_eval_config, run_planning_eval
 
-        cfg = load_eval_config(
-            config_name=self.eval_cfg.get("config_name", None),
-            config_path=self.eval_cfg.get("config_path", None),
-        )
+        cfg = load_eval_config(config_name=self.eval_cfg.config_name)
         cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
-        cfg = self._apply_eval_overrides(cfg)
-        if planning_seed is not None:
-            self._set_planning_seed(cfg, planning_seed)
-        if results_dir is None:
-            results_dir = self.run_dir / self.output_subdir / f"epoch_{epoch:04d}"
+        overrides = self.eval_cfg.get("overrides", None)
+        if overrides is not None:
+            cfg = OmegaConf.merge(cfg, overrides)
+        self._set_planning_seed(cfg, self.seed)
 
         module_states = [
             (module, module.training) for module in pl_module.model.modules()
@@ -461,78 +269,19 @@ class PlanningEvalCallback(Callback):
             metrics = run_planning_eval(
                 cfg,
                 model=pl_module.model,
-                results_dir=results_dir,
+                results_dir=self.run_dir / self.output_subdir / f"epoch_{epoch:04d}",
             )
         finally:
             for module, was_training in module_states:
                 module.train(was_training)
 
-        if log_metrics:
-            self._log_metrics(trainer, metrics, trainer.global_step)
-        self._last_eval_epoch = epoch
-        return metrics
-
-    def _run_final_eval(self, trainer, pl_module, epoch):
-        seeds = self._planning_eval_seeds()
-        metrics_by_seed = []
-        results_root = self.run_dir / self.output_subdir / f"epoch_{epoch:04d}"
-        for seed in seeds:
-            if len(seeds) == 1:
-                seed_results_dir = results_root
-            else:
-                seed_results_dir = results_root / f"seed{seed}"
-            metrics = self._run_eval(
-                trainer,
-                pl_module,
-                epoch,
-                planning_seed=seed,
-                results_dir=seed_results_dir,
-                log_metrics=False,
-            )
-            metrics_by_seed.append((seed, metrics))
-            self._log_metrics(
-                trainer,
-                metrics,
-                trainer.global_step,
-                prefix_suffix=f"seed_{seed}",
-            )
-
-        aggregate = self._aggregate_seed_metrics(metrics_by_seed)
-        results_root.mkdir(parents=True, exist_ok=True)
-        self._write_metrics(results_root / "metrics.yaml", aggregate)
-        self._log_metrics(trainer, aggregate, trainer.global_step)
-        self._last_eval_epoch = epoch
-
-    def _maybe_run(self, trainer, pl_module):
-        epoch = trainer.current_epoch + 1
-        if not self._should_run(epoch):
-            return
-
-        trainer.strategy.barrier("planning_eval_start")
-        if trainer.is_global_zero:
-            self._run_eval(trainer, pl_module, epoch)
-        trainer.strategy.barrier("planning_eval_end")
-
-    def on_train_epoch_end(self, trainer, pl_module):
-        self._maybe_run(trainer, pl_module)
-
-    def on_train_start(self, trainer, pl_module):
-        if not self.enabled or not self.run_on_train_start or self._last_eval_epoch == 0:
-            return
-
-        trainer.strategy.barrier("planning_eval_initial_start")
-        if trainer.is_global_zero:
-            self._run_eval(trainer, pl_module, epoch=0)
-        trainer.strategy.barrier("planning_eval_initial_end")
+        self._log_metrics(trainer, metrics, trainer.global_step)
 
     def on_train_end(self, trainer, pl_module):
-        if not self.enabled or not self.run_on_train_end:
-            return
-        final_epoch = trainer.current_epoch + 1
-        if trainer.global_step <= 0 or self._last_eval_epoch == final_epoch:
+        if not self.enabled or not self.run_on_train_end or trainer.global_step <= 0:
             return
 
         trainer.strategy.barrier("planning_eval_final_start")
         if trainer.is_global_zero:
-            self._run_final_eval(trainer, pl_module, final_epoch)
+            self._run_eval(trainer, pl_module, trainer.current_epoch + 1)
         trainer.strategy.barrier("planning_eval_final_end")

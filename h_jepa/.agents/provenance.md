@@ -55,7 +55,7 @@ Generated from the saved `eval_config.yaml` of the paper evals, with paths made 
 
 ## Deviations from the paper protocol
 
-- Planning at the end of training uses planner seed = model seed (`planning_eval.seeds: [${seed}]`),
+- Planning at the end of training uses planner seed = model seed (`PlanningEvalCallback`),
   matching the paper's standalone paired-seed evals. The paper's in-training evals (only `pusht_l4`
   and the Push-T/HWM 4-level points come from those) used planner seed 42 for every model.
 - Push-T, Ant and FourRoom planning evals are not bit-reproducible run to run, even with the paper

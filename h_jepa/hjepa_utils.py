@@ -123,55 +123,6 @@ def _split_pred_component(pred, output, level, component):
     return pred[..., pixel_dim:]
 
 
-def _add_pred_stream_outputs(output, model, level, level_cfg) -> None:
-    if not bool(level_cfg.wm.get("use_proprio", False)):
-        return
-
-    encoder = getattr(model.get_level(level), "encoder", None)
-    if not (hasattr(encoder, "pixel_encoder") and hasattr(encoder, "proprio_encoder")):
-        return
-    if not isinstance(getattr(encoder, "projector", None), torch.nn.Identity):
-        return
-
-    pred_key = f"pred_embed_{level}"
-    pixel_key = f"pixel_embed_{level}"
-    proprio_key = f"proprio_embed_{level}"
-    if pred_key not in output or pixel_key not in output or proprio_key not in output:
-        return
-
-    pred_embed = output[pred_key]
-    pixel_embed = output[pixel_key]
-    proprio_embed = output[proprio_key]
-
-    if pred_embed.ndim >= 5:
-        pixel_channels = pixel_embed.size(2)
-        proprio_channels = proprio_embed.size(2)
-        expected_channels = pixel_channels + proprio_channels
-        if pred_embed.size(2) != expected_channels:
-            raise ValueError(
-                f"Cannot split {pred_key}: expected channel dim {expected_channels} "
-                f"from {pixel_key} ({pixel_channels}) + "
-                f"{proprio_key} ({proprio_channels}), got {pred_embed.size(2)}."
-            )
-
-        output[f"pred_pixel_embed_{level}"] = pred_embed[:, :, :pixel_channels]
-        output[f"pred_proprio_embed_{level}"] = pred_embed[:, :, pixel_channels:]
-        return
-
-    pixel_dim = pixel_embed.size(-1)
-    proprio_dim = proprio_embed.size(-1)
-    expected_dim = pixel_dim + proprio_dim
-    if pred_embed.size(-1) != expected_dim:
-        raise ValueError(
-            f"Cannot split {pred_key}: expected last dim {expected_dim} from "
-            f"{pixel_key} ({pixel_dim}) + {proprio_key} ({proprio_dim}), "
-            f"got {pred_embed.size(-1)}."
-        )
-
-    output[f"pred_pixel_embed_{level}"] = pred_embed[..., :pixel_dim]
-    output[f"pred_proprio_embed_{level}"] = pred_embed[..., pixel_dim:]
-
-
 def hjepa_forward(
     self,
     batch,
@@ -179,7 +130,6 @@ def hjepa_forward(
     cfg,
     *,
     normalize_batch=None,
-    print_tensor_shapes=False,
 ):
     """Encode HJEPA inputs, predict next states, and compute per-level losses."""
     if normalize_batch is not None:
@@ -191,10 +141,6 @@ def hjepa_forward(
         levels_to_encode=int(cfg.num_levels),
     )
     add_probe_targets(output, cfg)
-    if print_tensor_shapes:
-        for key, value in output.items():
-            if torch.is_tensor(value):
-                print(key, tuple(value.shape))
 
     total_loss = None
     for level in range(1, int(cfg.num_levels) + 1):
@@ -300,7 +246,6 @@ def hjepa_forward(
 
         # Keep prediction probes aligned with the original timeline.
         output[f"pred_embed_{level}"] = pred_timeline
-        _add_pred_stream_outputs(output, self.model, level, level_cfg)
 
         with torch.no_grad():
             output[f"mse_loss{level_suffix}"] = F.mse_loss(pred_emb, tgt_emb)
@@ -428,7 +373,7 @@ def create_world_model(cfg):
     from models.encoders.seq_encoder import SequenceEncoder
     from models.hjepa import HJEPA
     from models.jepa import FusionEncoder, JEPA, ProjectedEncoder, ProjectedPredictor
-    from models.module import Embedder, MLP, build_projector
+    from models.module import Embedder, build_projector
     from models.predictors.predictors import ARPredictor
 
     jepas = []
@@ -447,11 +392,7 @@ def create_world_model(cfg):
         return cfg, projector_cfg
 
     def _projector_output_dim(projector_cfg, default_dim):
-        if projector_cfg is None:
-            return int(default_dim)
-        return int(
-            projector_cfg.get("output_dim", projector_cfg.get("embed_dim", default_dim))
-        )
+        return int(projector_cfg.get("output_dim", default_dim))
 
     def _build_projected_encoder(encoder_cfg, projector_cfg, output_dim):
         base_encoder, hidden_dim = build_encoder(
@@ -460,7 +401,7 @@ def create_world_model(cfg):
             default_image_size=cfg.img_size,
         )
         projector = build_projector(
-            projector_cfg or {"type": "identity"},
+            projector_cfg,
             input_dim=hidden_dim,
             output_dim=output_dim,
         )
@@ -472,12 +413,7 @@ def create_world_model(cfg):
         action_encoder_cfg = level_cfg.get("action_encoder", {})
         queue_size = int(action_encoder_cfg.get("queue_size", 0))
         temporal_stride = int(level_cfg.get("stride", 1))
-        temporal_window_size = int(level_cfg.get("window_size", level_cfg.get("kernel_size", 1)))
-        if int(level_cfg.wm.get("num_preds", 1)) != 1:
-            raise ValueError(
-                f"level{level}.wm.num_preds is no longer configurable. "
-                f"Use level{level}.wm.rollout_n for autoregressive training."
-            )
+        temporal_window_size = int(level_cfg.get("window_size", 1))
         rollout_n = int(level_cfg.wm.get("rollout_n", 1))
         if rollout_n <= 0:
             raise ValueError(f"level{level}.wm.rollout_n must be positive.")
@@ -493,25 +429,11 @@ def create_world_model(cfg):
 
         if use_proprio:
             fusion_cfg, fusion_projector_cfg = _split_projector_cfg(raw_encoder_cfg)
-            pixel_spec = fusion_cfg.pop("pixel_encoder", None)
-            proprio_spec = fusion_cfg.pop("proprio_encoder", None)
+            pixel_spec = fusion_cfg.pop("pixel_encoder")
+            proprio_spec = fusion_cfg.pop("proprio_encoder")
 
-            if pixel_spec is None:
-                pixel_encoder_cfg, pixel_projector_cfg = fusion_cfg, {"type": "identity"}
-            else:
-                pixel_encoder_cfg, pixel_projector_cfg = _split_projector_cfg(
-                    pixel_spec.get("encoder", pixel_spec)
-                )
-                pixel_projector_cfg = pixel_spec.get(
-                    "projector",
-                    pixel_projector_cfg,
-                )
-
-            if level > 1 and "input_dim" not in pixel_encoder_cfg:
-                previous_pixel_dim = pixel_embed_dims.get(level - 1, None)
-                if previous_pixel_dim is not None:
-                    pixel_encoder_cfg["input_dim"] = previous_pixel_dim
-
+            pixel_encoder_cfg = _plain_cfg(pixel_spec["encoder"])
+            pixel_projector_cfg = pixel_spec["projector"]
             pixel_base_encoder, pixel_hidden_dim = build_encoder(
                 pixel_encoder_cfg,
                 default_patch_size=cfg.patch_size,
@@ -524,68 +446,27 @@ def create_world_model(cfg):
             pixel_encoder = ProjectedEncoder(
                 pixel_base_encoder,
                 build_projector(
-                    pixel_projector_cfg or {"type": "identity"},
+                    pixel_projector_cfg,
                     input_dim=pixel_hidden_dim,
                     output_dim=pixel_output_dim,
                 ),
             )
 
-            proprio_dim = level_cfg.wm.get("proprio_dim", None)
-            if proprio_dim is None and level > 1:
-                proprio_dim = proprio_embed_dims.get(level - 1, None)
-            proprio_emb_dim = level_cfg.wm.get("proprio_emb_dim", None)
-            if proprio_emb_dim is None:
-                raise ValueError(
-                    f"level{level}.wm.use_proprio=true requires "
-                    f"level{level}.wm.proprio_emb_dim."
-                )
-            if proprio_dim is None:
-                raise ValueError(
-                    f"level{level}.wm.use_proprio=true requires a loaded "
-                    "'proprio' column or lower-level proprio embeddings so "
-                    "proprio_dim can be inferred."
-                )
-
-            if proprio_spec is None:
-                proprio_encoder_cfg = level_cfg.get("proprio_encoder", {})
-                proprio_hidden_dim = int(
-                    proprio_encoder_cfg.get("hidden_dim", 4 * int(proprio_emb_dim))
-                )
-                proprio_base_encoder = MLP(
-                    input_dim=int(proprio_dim),
-                    hidden_dim=proprio_hidden_dim,
-                    output_dim=int(proprio_emb_dim),
-                    final_ln=bool(proprio_encoder_cfg.get("final_ln", False)),
-                )
-                proprio_projector_cfg = {"type": "identity"}
-                proprio_output_dim = int(proprio_emb_dim)
-                proprio_encoder = ProjectedEncoder(
-                    proprio_base_encoder,
-                    build_projector(
-                        proprio_projector_cfg,
-                        input_dim=proprio_output_dim,
-                        output_dim=proprio_output_dim,
-                    ),
-                )
-            else:
-                proprio_encoder_cfg, proprio_projector_cfg = _split_projector_cfg(
-                    proprio_spec.get("encoder", proprio_spec)
-                )
-                proprio_projector_cfg = proprio_spec.get(
-                    "projector",
-                    proprio_projector_cfg or {"type": "identity"},
-                )
-                proprio_encoder_cfg.setdefault("input_dim", int(proprio_dim))
-                proprio_encoder_cfg.setdefault("output_dim", int(proprio_emb_dim))
-                proprio_output_dim = _projector_output_dim(
-                    proprio_projector_cfg,
-                    proprio_encoder_cfg.get("output_dim", proprio_emb_dim),
-                )
-                proprio_encoder, _ = _build_projected_encoder(
-                    proprio_encoder_cfg,
-                    proprio_projector_cfg,
-                    proprio_output_dim,
-                )
+            proprio_dim = level_cfg.wm.proprio_dim
+            proprio_emb_dim = level_cfg.wm.proprio_emb_dim
+            proprio_encoder_cfg = _plain_cfg(proprio_spec["encoder"])
+            proprio_projector_cfg = proprio_spec["projector"]
+            proprio_encoder_cfg.setdefault("input_dim", int(proprio_dim))
+            proprio_encoder_cfg.setdefault("output_dim", int(proprio_emb_dim))
+            proprio_output_dim = _projector_output_dim(
+                proprio_projector_cfg,
+                proprio_encoder_cfg["output_dim"],
+            )
+            proprio_encoder, _ = _build_projected_encoder(
+                proprio_encoder_cfg,
+                proprio_projector_cfg,
+                proprio_output_dim,
+            )
 
             hidden_dim = int(pixel_hidden_dim)
             embed_dim = int(level_cfg.wm.get("embed_dim", hidden_dim))
@@ -593,10 +474,6 @@ def create_world_model(cfg):
             pixel_embed_dims[level] = int(pixel_output_dim)
             proprio_embed_dims[level] = int(proprio_output_dim)
 
-            fusion_projector_cfg = fusion_projector_cfg or level_cfg.get(
-                "projector",
-                {},
-            )
             encoder = FusionEncoder(
                 pixel_encoder=pixel_encoder,
                 proprio_encoder=proprio_encoder,
@@ -618,10 +495,6 @@ def create_world_model(cfg):
             )
             embed_dim = int(level_cfg.wm.get("embed_dim", hidden_dim))
             embed_dims[level] = embed_dim
-            encoder_projector_cfg = encoder_projector_cfg or level_cfg.get(
-                "projector",
-                {},
-            )
             encoder = ProjectedEncoder(
                 encoder,
                 build_projector(
@@ -631,35 +504,22 @@ def create_world_model(cfg):
                 ),
             )
 
-        raw_predictor_cfg = _plain_cfg(level_cfg.predictor)
 
-        def _build_predictor():
-            predictor_cfg = dict(raw_predictor_cfg)
-            predictor_type = str(predictor_cfg.pop("type", "transformer")).lower()
-            if predictor_type == "transformer":
-                predictor_projector_cfg = predictor_cfg.pop("projector", None)
-                predictor_projector_cfg = predictor_projector_cfg or level_cfg.get(
-                    "predictor_projector",
-                    level_cfg.get("projector", {}),
-                )
-                predictor = ARPredictor(
-                    num_frames=level_cfg.wm.history_size,
-                    input_dim=embed_dim,
-                    output_dim=hidden_dim,
-                    **predictor_cfg,
-                )
-                return ProjectedPredictor(
-                    predictor,
-                    build_projector(
-                        predictor_projector_cfg,
-                        input_dim=hidden_dim,
-                        output_dim=embed_dim,
-                    ),
-                )
-
-            raise ValueError(f"Unsupported predictor type {predictor_type!r}")
-
-        predictor = _build_predictor()
+        predictor_cfg = _plain_cfg(level_cfg.predictor)
+        predictor_projector_cfg = predictor_cfg.pop("projector")
+        predictor = ProjectedPredictor(
+            ARPredictor(
+                num_frames=level_cfg.wm.history_size,
+                input_dim=embed_dim,
+                output_dim=hidden_dim,
+                **predictor_cfg,
+            ),
+            build_projector(
+                predictor_projector_cfg,
+                input_dim=hidden_dim,
+                output_dim=embed_dim,
+            ),
+        )
 
         action_pooler = None
         if "action_pooler" in level_cfg:
@@ -676,24 +536,17 @@ def create_world_model(cfg):
 
         action_encoder_kwargs = {k: v for k, v in action_encoder_cfg.items()}
         action_encoder_kwargs.pop("queue_size", None)
-        action_encoder_type = str(action_encoder_kwargs.pop("type", "embedder")).lower()
-        if action_encoder_type == "identity":
-            action_encoder = torch.nn.Identity()
-        elif action_encoder_type == "embedder":
-            if level == 1:
-                effective_act_dim = cfg.data.dataset.level1.frameskip * cfg.level1.wm.action_dim
-                action_encoder_kwargs["input_dim"] = effective_act_dim
-            action_encoder_kwargs["emb_dim"] = embed_dim
-            action_encoder = Embedder(**action_encoder_kwargs)
-        else:
-            raise ValueError(f"Unsupported action encoder type {action_encoder_type!r}")
+        if level == 1:
+            effective_act_dim = cfg.data.dataset.level1.frameskip * cfg.level1.wm.action_dim
+            action_encoder_kwargs["input_dim"] = effective_act_dim
+        action_encoder_kwargs["emb_dim"] = embed_dim
+        action_encoder = Embedder(**action_encoder_kwargs)
 
         jepa = JEPA(
             encoder=encoder,
             predictor=predictor,
             action_encoder=action_encoder,
             action_pooler=action_pooler,
-            extra_encoders=None,
             level=level,
             action_queue_size=queue_size,
             temporal_stride=temporal_stride,

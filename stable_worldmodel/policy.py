@@ -1,8 +1,6 @@
 from collections import deque
 from dataclasses import dataclass
-import importlib
 from pathlib import Path
-import sys
 from typing import Any, Protocol
 from collections.abc import Callable
 
@@ -13,28 +11,6 @@ from torchvision import tv_tensors
 
 import stable_worldmodel as swm
 from stable_worldmodel.solver import Solver
-
-
-def _register_legacy_checkpoint_module_aliases() -> None:
-    """Map legacy LEJEPA module paths to the reorganized model package."""
-    alias_pairs = {
-        "jepa": "models.jepa",
-        "hjepa": "models.hjepa",
-        "module": "models.module",
-        "seq_encoder": "models.encoders.seq_encoder",
-        "spt_backbone_utils": "models.encoders.vit",
-        "unit_tests.spt_backbone_utils": "models.encoders.vit",
-        "factories.build_encoder": "models.encoders.build_encoder",
-    }
-
-    for legacy_name, current_name in alias_pairs.items():
-        if legacy_name in sys.modules:
-            continue
-        try:
-            sys.modules[legacy_name] = importlib.import_module(current_name)
-        except ModuleNotFoundError:
-            # Keep stable_worldmodel usable even when the LEJEPA package is absent.
-            continue
 
 
 @dataclass(frozen=True)
@@ -502,7 +478,6 @@ def _load_model_with_attribute(run_name, attribute_name, cache_dir=None):
                 f'Checkpoint path does not exist: {path}. Launch pretraining first.'
             )
 
-    _register_legacy_checkpoint_module_aliases()
     spt_module = torch.load(path, weights_only=False, map_location='cpu')
 
     def scan_module(module):

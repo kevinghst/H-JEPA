@@ -49,10 +49,6 @@ level2:
     rollout_loss_weight: 1.0
     embed_dim: ${level1.wm.embed_dim}
     use_proprio: false
-    action_dim: 2
-    xy_dim: 2
-    distractor0_xy_dim: 2
-    min_distractor_dist_dim: 1
   encoder:
     type: identity
     input_dim: ${level1.wm.embed_dim}
@@ -62,7 +58,6 @@ level2:
     output_dim: 4
     input_dim: ${level1.wm.embed_dim}
     max_chunk: ${eval:'${data.dataset.level2.frameskip} + 1'}
-    uniform_input: true
   action_encoder:
     patch_embed: false
     input_dim: ${level2.action_pooler.output_dim}
@@ -92,10 +87,6 @@ level3:
     rollout_loss_weight: 1.0
     embed_dim: ${level1.wm.embed_dim}
     use_proprio: false
-    action_dim: 2
-    xy_dim: 2
-    distractor0_xy_dim: 2
-    min_distractor_dist_dim: 1
   encoder:
     type: identity
     input_dim: ${level2.wm.embed_dim}
@@ -105,7 +96,6 @@ level3:
     output_dim: 4
     input_dim: ${level2.wm.embed_dim}
     max_chunk: ${eval:'${data.dataset.level3.frameskip} + 1'}
-    uniform_input: true
   action_encoder:
     patch_embed: false
     input_dim: ${level3.action_pooler.output_dim}
@@ -135,10 +125,6 @@ level4:
     rollout_loss_weight: 1.0
     embed_dim: ${level1.wm.embed_dim}
     use_proprio: false
-    action_dim: 2
-    xy_dim: 2
-    distractor0_xy_dim: 2
-    min_distractor_dist_dim: 1
   encoder:
     type: identity
     input_dim: ${level3.wm.embed_dim}
@@ -148,7 +134,6 @@ level4:
     output_dim: 4
     input_dim: ${level3.wm.embed_dim}
     max_chunk: ${eval:'${data.dataset.level4.frameskip} + 1'}
-    uniform_input: true
   action_encoder:
     patch_embed: false
     input_dim: ${level4.action_pooler.output_dim}

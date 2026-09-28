@@ -105,8 +105,6 @@ class FusionEncoder(nn.Module):
 class ProjectedPredictor(nn.Module):
     """Predictor followed by its projection head."""
 
-    returns_projected = True
-
     def __init__(self, predictor, projector=None):
         super().__init__()
         self.predictor = predictor
@@ -125,10 +123,6 @@ class JEPA(nn.Module):
         predictor,
         action_encoder,
         action_pooler=None,
-        proprio_encoder=None,
-        projector=None,
-        pred_proj=None,
-        extra_encoders: nn.ModuleList | None = None,
         level:int=1,
         action_queue_size: int = 0,
         temporal_stride: int = 1,
@@ -141,12 +135,6 @@ class JEPA(nn.Module):
         self.predictor = predictor
         self.action_encoder = action_encoder
         self.action_pooler = action_pooler or nn.Identity()
-        if proprio_encoder is not None or projector is not None:
-            self.proprio_encoder = proprio_encoder
-            self.projector = projector or nn.Identity()
-        if pred_proj is not None:
-            self.pred_proj = pred_proj
-        self.extra_encoders = extra_encoders
         self.level = level
         self.temporal_stride = int(temporal_stride)
         self.temporal_window_size = int(temporal_window_size)
@@ -154,24 +142,11 @@ class JEPA(nn.Module):
         self.configure_action_queue(action_queue_size)
 
     def __setstate__(self, state):
-        # Back-compat: checkpoints pickled before the kernel_size->window_size rename
-        # carry the attribute under its old name.
+        # The four LeWM paper checkpoints were pickled before the kernel_size->window_size
+        # rename and carry the attribute under its old name.
         if "temporal_kernel_size" in state and "temporal_window_size" not in state:
             state["temporal_window_size"] = state.pop("temporal_kernel_size")
         self.__dict__.update(state)
-
-    def _run_encoder(self, x):
-        return _run_encoder(self.encoder, x)
-
-    def _split_encoder_output(
-        self,
-        encoder_output,
-        allow_cls_token: bool = True,
-    ) -> torch.Tensor:
-        return _split_encoder_output(
-            encoder_output,
-            allow_cls_token=allow_cls_token,
-        )
 
     def _state_windows(
         self,
@@ -340,9 +315,7 @@ class JEPA(nn.Module):
         self,
         info,
         key="pixels",
-        extra_keys=None,
         temporal_stride: int | None = None,
-        temporal_window_size: int | None = None,
         chunk_temporal_inputs: bool = False,
     ):
         """Encode observations and actions into embeddings.
@@ -352,8 +325,7 @@ class JEPA(nn.Module):
         if chunk_temporal_inputs:
             if temporal_stride is None:
                 temporal_stride = getattr(self, "temporal_stride", 1)
-            if temporal_window_size is None:
-                temporal_window_size = getattr(self, "temporal_window_size", 1)
+            temporal_window_size = getattr(self, "temporal_window_size", 1)
             chunked_state_input = int(temporal_window_size) > 1
 
             info = self._chunk_temporal_info(
@@ -364,39 +336,17 @@ class JEPA(nn.Module):
             )
 
         B = info[key].size(0)
-        if hasattr(self.encoder, "encode_info"):
-            encoder_outputs = self.encoder.encode_info(
-                info,
-                key=key,
-                allow_cls_token=not chunked_state_input,
+        encoder_outputs = self.encoder.encode_info(
+            info,
+            key=key,
+            allow_cls_token=not chunked_state_input,
+        )
+        for output_key, value in encoder_outputs.items():
+            info[f"{output_key}_0"] = rearrange(
+                value,
+                "(b t) ... -> b t ...",
+                b=B,
             )
-            for output_key, value in encoder_outputs.items():
-                info[f"{output_key}_0"] = rearrange(
-                    value,
-                    "(b t) ... -> b t ...",
-                    b=B,
-                )
-        else:
-            pixels = info[key].float()
-            pixels = rearrange(pixels, "b t ... -> (b t) ...")
-            output = self._run_encoder(pixels)
-            pixels_emb = self._split_encoder_output(
-                output,
-                allow_cls_token=not chunked_state_input,
-            )
-
-            if getattr(self, "proprio_encoder", None) is not None:
-                if "proprio" not in info:
-                    raise KeyError(
-                        "JEPA was configured with proprio_encoder but 'proprio' "
-                        "is missing from input"
-                    )
-                proprio = rearrange(info["proprio"].float(), "b t ... -> (b t) ...")
-                proprio_emb = self.proprio_encoder(proprio)
-                pixels_emb = torch.cat([pixels_emb, proprio_emb], dim=-1)
-
-            emb = getattr(self, "projector", nn.Identity())(pixels_emb)
-            info["embed_0"] = rearrange(emb, "(b t) ... -> b t ...", b=B)
 
         if "action" in info:
             action_pooler = getattr(self, "action_pooler", None)
@@ -417,52 +367,7 @@ class JEPA(nn.Module):
         emb: (B, T, D)
         act_emb: (B, T, A_emb)
         """
-        if getattr(self.predictor, "returns_projected", False):
-            return self.predictor(emb, act_emb)
-
-        preds = self.predictor(emb, act_emb)
-        preds = getattr(self, "pred_proj", nn.Identity())(
-            rearrange(preds, "b t d -> (b t) d")
-        )
-        preds = rearrange(preds, "(b t) ... -> b t ...", b=emb.size(0))
-        return preds
-
-    def rollout_action_embeddings(
-        self,
-        init_emb: torch.Tensor,
-        act_emb: torch.Tensor,
-        history_size: int = 1,
-    ) -> torch.Tensor:
-        """Autoregressively roll out embeddings from an initial context.
-
-        Args:
-            init_emb: Initial latent context of shape (B, H, D).
-            act_emb: Encoded action sequence of shape (B, T, A).
-            history_size: Number of past steps to condition on.
-
-        Returns:
-            Latent rollout of shape (B, H + T, D), including the initial context.
-        """
-        if init_emb.ndim != 3:
-            raise ValueError(
-                f"Expected init_emb to have shape (B, H, D), got {tuple(init_emb.shape)}"
-            )
-        if act_emb.ndim != 3:
-            raise ValueError(
-                f"Expected act_emb to have shape (B, T, A), got {tuple(act_emb.shape)}"
-            )
-        if history_size <= 0:
-            raise ValueError(f"history_size must be positive, got {history_size}")
-
-        emb = init_emb.clone()
-        for step in range(act_emb.size(1)):
-            act_prefix = act_emb[:, : step + 1]
-            emb_trunc = emb[:, -history_size:]
-            act_trunc = act_prefix[:, -history_size:]
-            pred_emb = self.predict(emb_trunc, act_trunc)[:, -1:]
-            emb = torch.cat([emb, pred_emb], dim=1)
-
-        return emb
+        return self.predictor(emb, act_emb)
 
     def rollout(self, info, action_sequence, history_size: int = 1):
         """Rollout the model given an initial info dict and action sequence."""
@@ -525,11 +430,7 @@ class JEPA(nn.Module):
 
         return cost.sum(dim=tuple(range(2, cost.ndim)))
 
-    def get_cost_components(
-        self,
-        info_dict: dict,
-        action_candidates: torch.Tensor,
-    ) -> dict[str, torch.Tensor | None]:
+    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor) -> torch.Tensor:
         if "goal_embed_0" not in info_dict:
             assert "goal" in info_dict, "goal not in info_dict"
 
@@ -550,15 +451,7 @@ class JEPA(nn.Module):
             _goal = self.encode(_goal)
 
             info_dict["goal_embed_0"] = _goal["embed_0"]
-            for component in ("pixel", "proprio"):
-                component_key = f"{component}_embed_0"
-                if component_key in _goal:
-                    info_dict[f"goal_{component}_embed_0"] = _goal[component_key]
 
         info_dict = self.rollout(info_dict, action_candidates)
 
-        latent_cost = self.criterion(info_dict)
-        return {"total": latent_cost, "latent": latent_cost}
-
-    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor):
-        return self.get_cost_components(info_dict, action_candidates)["total"]
+        return self.criterion(info_dict)

@@ -6,8 +6,8 @@ from .encoders import (
     build_mlp_encoder,
     to_plain_encoder_dict,
 )
+from .hf_vit import create_hf_vit
 from .seq_encoder import FlattenedSequenceEncoder
-from .vit import vit_hf
 
 
 def build_encoder(
@@ -19,7 +19,7 @@ def build_encoder(
     """Build an encoder from levelN.encoder config.
 
     Supports:
-    - type: vit -> models.encoders.vit.vit_hf
+    - type: vit -> models.encoders.hf_vit.create_hf_vit
     - type: mlp -> models.module.MLP
     - type: latent_mlp -> models.module.ResidualLatentMLP
     - type: seq_encoder -> models.encoders.seq_encoder.FlattenedSequenceEncoder
@@ -36,7 +36,7 @@ def build_encoder(
     encoder_kwargs = {k: v for k, v in cfg.items() if k != "type"}
 
     if encoder_type == "vit":
-        # Support config alias: levelN.encoder.scale -> vit_hf(size=...)
+        # Support config alias: levelN.encoder.scale -> create_hf_vit(size=...)
         if "size" not in encoder_kwargs and "scale" in encoder_kwargs:
             encoder_kwargs["size"] = encoder_kwargs.pop("scale")
 
@@ -49,7 +49,7 @@ def build_encoder(
         if "image_size" not in encoder_kwargs and default_image_size is not None:
             encoder_kwargs["image_size"] = default_image_size
 
-        encoder = vit_hf(**encoder_kwargs)
+        encoder = create_hf_vit(**encoder_kwargs)
         hidden_dim = int(encoder.config.hidden_size)
         return encoder, hidden_dim
 
