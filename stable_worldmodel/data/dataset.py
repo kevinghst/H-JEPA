@@ -1,7 +1,6 @@
 """Dataset classes for episode-based reinforcement learning data."""
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
 import re
 from typing import Any
@@ -15,29 +14,41 @@ from omegaconf import OmegaConf
 from stable_worldmodel.data.utils import get_cache_dir
 
 
-class Dataset:
-    """Base class for episode-based datasets.
+class HDF5Dataset:
+    """Episode dataset loaded from a single HDF5 file.
 
     Args:
-        lengths: Array of episode lengths.
-        offsets: Array of episode start offsets in the data.
-        frameskip: Number of frames to skip between samples.
-        num_steps: Number of steps per sample.
-        transform: Optional transform to apply to loaded data.
+        name: Name of the dataset (filename without extension).
+        keys_to_load: Specific keys to load (defaults to all except metadata).
+        keys_to_cache: Keys to load entirely into memory for faster access.
+        keys_to_merge: Target column -> source columns to concatenate and cache.
+        cache_dir: Directory containing the dataset file.
+        level1, level2, ...: Per-level clip configs (frameskip, num_steps, window_size).
     """
 
     def __init__(
         self,
-        lengths: np.ndarray,
-        offsets: np.ndarray,
-        # frameskip: int = 1,
-        # num_steps: int = 1,
+        name: str,
+        keys_to_load: list[str] | None = None,
+        keys_to_cache: list[str] | None = None,
+        keys_to_merge: dict[str, list[str] | str] | None = None,
+        cache_dir: str | Path | None = None,
         level1: dict | None = None,
-        transform: Callable[[dict], dict] | None = None,
         **level_kwargs,
     ) -> None:
-        self.lengths = lengths
-        self.offsets = offsets
+        self.h5_path = Path(cache_dir or get_cache_dir(), f'{name}.h5')
+        self.h5_file: h5py.File | None = None
+        self._cache: dict[str, np.ndarray] = {}
+
+        with h5py.File(self.h5_path, 'r') as f:
+            self.lengths, self.offsets = f['ep_len'][:], f['ep_offset'][:]
+            self._keys = keys_to_load or [
+                k for k in f.keys() if k not in ('ep_len', 'ep_offset')
+            ]
+
+            for key in keys_to_cache or []:
+                self._cache[key] = f[key][:]
+                logging.info(f"Cached '{key}' from '{self.h5_path}'")
 
         def _normalize_level(level_cfg: dict | None, level_name: str) -> dict | None:
             if level_cfg is None:
@@ -55,7 +66,7 @@ class Dataset:
 
             normalized["frameskip"] = int(normalized["frameskip"])
             normalized["num_steps"] = int(normalized["num_steps"])
-            normalized["window_size"] = int(normalized.get("window_size", normalized.get("kernel_size", 1)))
+            normalized["window_size"] = int(normalized.get("window_size", 1))
             return normalized
 
         level_inputs = {"level1": level1}
@@ -118,42 +129,27 @@ class Dataset:
 
         self.clip_indices = [
             (ep, start)
-            for ep, length in enumerate(lengths)
+            for ep, length in enumerate(self.lengths)
             if length >= self.last_level['span']
             for start in range(length - self.last_level['span'] + 1)
         ]
-            
-        self.transform = transform
 
-        # self.frameskip = frameskip
-        # self.num_steps = num_steps
-        # self.span = num_steps * frameskip
-        # self.clip_indices = [
-        #     (ep, start)
-        #     for ep, length in enumerate(lengths)
-        #     if length >= self.span
-        #     for start in range(length - self.span + 1)
-        # ]
+        self.transform = None
+
+        if keys_to_merge:
+            for target, source in keys_to_merge.items():
+                self.merge_col(source, target)
 
     @property
     def column_names(self) -> list[str]:
-        raise NotImplementedError
-
-    def _load_slice(self, ep_idx: int, start: int, end: int) -> dict:
-        raise NotImplementedError
+        return self._keys
 
     def __len__(self) -> int:
         return len(self.clip_indices)
 
     def __getitem__(self, idx: int) -> dict:
         ep_idx, start = self.clip_indices[idx]
-        # steps = self._load_slice(ep_idx, start, start + self.span)
-        # if 'action' in steps:
-        #     steps['action'] = steps['action'].reshape(self.num_steps, -1)
-        
-        steps = self._load_slice_with_levels(ep_idx, start)
-        
-        return steps
+        return self._load_slice_with_levels(ep_idx, start)
 
     def load_chunk(
         self, episodes_idx: np.ndarray, start: np.ndarray, end: np.ndarray
@@ -167,87 +163,6 @@ class Dataset:
                 )
             chunk.append(steps)
         return chunk
-
-    def load_episode(self, episode_idx: int) -> dict:
-        """Load full episode by index."""
-        return self._load_slice(episode_idx, 0, self.lengths[episode_idx])
-
-    def get_col_data(self, col: str) -> np.ndarray:
-        raise NotImplementedError
-
-    def get_dim(self, col: str) -> int:
-        raise NotImplementedError
-
-    def get_row_data(self, row_idx: int | list[int]) -> dict:
-        raise NotImplementedError
-
-    def merge_col(
-        self,
-        source: list[str | dict[str, Any]] | str | dict[str, Any],
-        target: str,
-        dim: int = -1,
-    ) -> None:
-        raise NotImplementedError
-
-
-class HDF5Dataset(Dataset):
-    """Dataset loading from HDF5 file.
-
-    Reads data from a single .h5 file containing all episode data.
-    Uses SWMR mode for robust reading while writing.
-
-    Args:
-        name: Name of the dataset (filename without extension).
-        frameskip: Number of frames to skip between samples.
-        num_steps: Number of steps per sample sequence.
-        transform: Optional data transform callable.
-        keys_to_load: Specific keys to load (defaults to all except metadata).
-        keys_to_cache: Keys to load entirely into memory for faster access.
-        cache_dir: Directory containing the dataset file.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        # frameskip: int = 1,
-        # num_steps: int = 1,
-        transform: Callable[[dict], dict] | None = None,
-        keys_to_load: list[str] | None = None,
-        keys_to_cache: list[str] | None = None,
-        keys_to_merge: dict[str, list[str] | str] | None = None,
-        cache_dir: str | Path | None = None,
-        level1: dict | None = None,
-        **level_kwargs,
-    ) -> None:
-        self.h5_path = Path(cache_dir or get_cache_dir(), f'{name}.h5')
-        self.h5_file: h5py.File | None = None
-        self._cache: dict[str, np.ndarray] = {}
-
-        with h5py.File(self.h5_path, 'r') as f:
-            lengths, offsets = f['ep_len'][:], f['ep_offset'][:]
-            self._keys = keys_to_load or [
-                k for k in f.keys() if k not in ('ep_len', 'ep_offset')
-            ]
-
-            for key in keys_to_cache or []:
-                self._cache[key] = f[key][:]
-                logging.info(f"Cached '{key}' from '{self.h5_path}'")
-
-        super().__init__(
-            lengths=lengths,
-            offsets=offsets,
-            level1=level1,
-            transform=transform,
-            **level_kwargs,
-        )
-
-        if keys_to_merge:
-            for target, source in keys_to_merge.items():
-                self.merge_col(source, target)
-
-    @property
-    def column_names(self) -> list[str]:
-        return self._keys
 
     def _open(self) -> None:
         if self.h5_file is None:
@@ -282,7 +197,6 @@ class HDF5Dataset(Dataset):
             )
 
         return {f'{col}_level1': steps for col, steps in level1_steps.items()}
-        
 
     def _load_slice(
         self,

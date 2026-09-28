@@ -196,7 +196,6 @@ def _build_datasets(cfg, normalizer_artifact, train_cfg):
     cache_dir = _cache_dir(cfg)
     train_dataset = build_hdf5_dataset(
         train_dataset_cfg,
-        transform=None,
         cache_dir=cache_dir,
     )
 
@@ -205,7 +204,6 @@ def _build_datasets(cfg, normalizer_artifact, train_cfg):
         _validate_dataset_cfg(eval_key, eval_dataset_cfg)
         eval_dataset = build_hdf5_dataset(
             eval_dataset_cfg,
-            transform=None,
             cache_dir=cache_dir,
         )
         eval_datasets[eval_key] = eval_dataset

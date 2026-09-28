@@ -41,14 +41,12 @@ solver:
   optimizer_kwargs:
     lr: 0.05
 plan_config:
-  resolve_horizon: true
   horizon: 15
   receding_horizon: 2
   action_block: 5
   cost_last_n: 2
 eval:
   num_eval: 50
-  traj_sampling_mode: stratified
   goal_offset_steps: 75
   eval_budget: 90
   img_size: 224
@@ -64,4 +62,3 @@ eval:
         value: goal_state
 output:
   dir: null
-  filename: pusht_results.txt

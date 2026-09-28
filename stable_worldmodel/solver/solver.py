@@ -1,5 +1,4 @@
 import math
-from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
 import gymnasium as gym
@@ -32,85 +31,6 @@ class Costable(Protocol):
             A tensor of cost values for each action candidate.
         """
         ...
-
-
-def resolve_cost_last_n(
-    cost_last_n: int | Sequence[int],
-    replanning_interval: int,
-    steps_taken: int | None = None,
-) -> int:
-    """Return the cost_last_n for the current planning call.
-
-    If cost_last_n is a list, indexes into it using the current call index
-    (same schedule logic as horizon). Clamps to the last entry if exhausted.
-    """
-    if isinstance(cost_last_n, int):
-        return max(1, cost_last_n)
-    call_idx = 0 if steps_taken is None else int(steps_taken) // int(replanning_interval)
-    call_idx = min(call_idx, len(cost_last_n) - 1)
-    return max(1, int(cost_last_n[call_idx]))
-
-
-def configured_planning_horizon(
-    *,
-    configured_horizon: int | Sequence[int],
-    resolve_horizon: bool = False,
-    replanning_interval: int,
-    steps_taken: int | None = None,
-    eval_budget: int | None = None,
-) -> int:
-    """Return the configured horizon for the current planning call."""
-    if isinstance(configured_horizon, int):
-        if configured_horizon <= 0:
-            raise ValueError(
-                f'Planning horizon must be positive, got {configured_horizon}.'
-            )
-        return configured_horizon
-
-    if resolve_horizon:
-        raise ValueError(
-            'Expected integer horizon when resolve_horizon is enabled, '
-            f'got {type(configured_horizon).__name__}.'
-        )
-
-    if not isinstance(configured_horizon, Sequence) or isinstance(
-        configured_horizon, (str, bytes)
-    ):
-        raise ValueError(
-            'Expected integer or list-valued horizon, '
-            f'got {type(configured_horizon).__name__}.'
-        )
-
-    if replanning_interval <= 0:
-        raise ValueError(
-            f'Replanning interval must be positive, got {replanning_interval}.'
-        )
-
-    horizon_schedule = [int(horizon) for horizon in configured_horizon]
-    if len(horizon_schedule) == 0:
-        raise ValueError('Horizon schedule must contain at least one entry.')
-    if any(horizon <= 0 for horizon in horizon_schedule):
-        raise ValueError(
-            f'All scheduled planning horizons must be positive, got {horizon_schedule}.'
-        )
-
-    if eval_budget is not None:
-        expected_calls = math.ceil(int(eval_budget) / int(replanning_interval))
-        if len(horizon_schedule) != expected_calls:
-            raise ValueError(
-                'Horizon schedule length must match the number of solver calls '
-                'under eval_budget and replanning_interval: '
-                f'got {len(horizon_schedule)} entries, expected {expected_calls}.'
-            )
-
-    call_idx = 0 if steps_taken is None else int(steps_taken) // int(replanning_interval)
-    if call_idx >= len(horizon_schedule):
-        raise ValueError(
-            'Planning call index exceeds configured horizon schedule: '
-            f'got call {call_idx} for schedule length {len(horizon_schedule)}.'
-        )
-
-    return horizon_schedule[call_idx]
 
 
 def num_planning_calls(*, eval_budget: int, replanning_interval: int) -> int:
@@ -186,42 +106,18 @@ def decreasing_horizon_schedule(
 
 def get_planning_horizon(
     *,
-    configured_horizon: int | Sequence[int],
-    resolve_horizon: bool = False,
+    configured_horizon: int,
     replanning_interval: int,
-    level_span: int,
-    horizon: int | None = None,
     steps_taken: int | None = None,
-    eval_budget: int | None = None,
+    eval_budget: int,
 ) -> int:
-    """Resolve the planning horizon for the current solver call."""
-    if horizon is not None:
-        planning_horizon = int(horizon)
-        if planning_horizon <= 0:
-            raise ValueError(
-                f'Planning horizon must be positive, got {planning_horizon}.'
-            )
-        return planning_horizon
-
-    base_horizon = configured_planning_horizon(
-        configured_horizon=configured_horizon,
-        resolve_horizon=resolve_horizon,
-        replanning_interval=replanning_interval,
-        steps_taken=steps_taken,
-        eval_budget=eval_budget,
-    )
-    if not resolve_horizon:
-        return base_horizon
-
-    if eval_budget is None:
-        return base_horizon
-
+    """Return this call's horizon from the decreasing schedule over the eval budget."""
     schedule = decreasing_horizon_schedule(
         num_calls=num_planning_calls(
             eval_budget=int(eval_budget),
             replanning_interval=int(replanning_interval),
         ),
-        configured_horizon=base_horizon,
+        configured_horizon=int(configured_horizon),
     )
     call_idx = planning_call_index(
         replanning_interval=replanning_interval,
@@ -268,20 +164,16 @@ class Solver(Protocol):
         self,
         info_dict: dict,
         init_action: torch.Tensor | None = None,
-        horizon: int | None = None,
         steps_taken: int | None = None,
         eval_budget: int | None = None,
-        level_span: int | None = None,
     ) -> dict:
         """Solve the planning optimization problem to find optimal actions.
 
         Args:
             info_dict: Dictionary containing environment state information.
             init_action: Optional initial action sequence to warm-start the solver.
-            horizon: Optional per-call horizon override.
             steps_taken: Number of environment steps already consumed.
             eval_budget: Total environment-step budget for evaluation.
-            level_span: Optional env-step span of one prediction step at this level.
 
         Returns:
             Dictionary containing optimized actions and other solver-specific info.

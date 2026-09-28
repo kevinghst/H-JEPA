@@ -203,15 +203,11 @@ class World:
         env_name: Name of the Gymnasium environment to create.
         num_envs: Number of parallel environments.
         image_shape: Target shape for image observations (H, W).
-        goal_transform: Optional callable to transform goal observations.
-        image_transform: Optional callable to transform image observations.
         seed: Random seed for reproducibility.
         history_size: Number of frames to stack.
         frame_skip: Number of frames to skip per step.
         max_episode_steps: Maximum steps per episode before truncation.
         verbose: Verbosity level (0: silent, >0: info).
-        extra_wrappers: List of additional wrappers to apply to each env.
-        goal_conditioned: Whether to separate goal from observation.
         **kwargs: Additional keyword arguments passed to `gym.make_vec`.
     """
 
@@ -220,28 +216,20 @@ class World:
         env_name: str,
         num_envs: int,
         image_shape: tuple[int, int],
-        goal_transform: Callable[[Any], Any] | None = None,
-        image_transform: Callable[[Any], Any] | None = None,
         seed: int = 2349867,
         history_size: int = 1,
         frame_skip: int = 1,
         max_episode_steps: int = 100,
         verbose: int = 1,
-        extra_wrappers: list[Callable] | None = None,
-        goal_conditioned: bool = True,
         **kwargs: Any,
     ) -> None:
         wrappers = [
             partial(
                 MegaWrapper,
                 image_shape=image_shape,
-                pixels_transform=image_transform,
-                goal_transform=goal_transform,
                 history_size=history_size,
                 frame_skip=frame_skip,
-                separate_goal=goal_conditioned,
             ),
-            *(extra_wrappers or []),
         ]
 
         env_fn = partial(
@@ -270,7 +258,7 @@ class World:
 
             if self.envs.variation_space is not None:
                 logging.info('⚗️ ⚗️ ⚗️ Variation space ⚗️ ⚗️ ⚗️')
-                print(self.single_variation_space.to_str())
+                print(self.envs.single_variation_space.to_str())
             else:
                 logging.warning('No variation space provided!')
 
@@ -280,36 +268,6 @@ class World:
     def num_envs(self) -> int:
         """Number of parallel environment instances."""
         return self.envs.num_envs
-
-    @property
-    def observation_space(self) -> gym.Space:
-        """Batched observation space for all environments."""
-        return self.envs.observation_space
-
-    @property
-    def action_space(self) -> gym.Space:
-        """Batched action space for all environments."""
-        return self.envs.action_space
-
-    @property
-    def variation_space(self) -> gym.Space | None:
-        """Batched variation space for domain randomization."""
-        return self.envs.variation_space
-
-    @property
-    def single_variation_space(self) -> gym.Space | None:
-        """Variation space for a single environment instance."""
-        return self.envs.single_variation_space
-
-    @property
-    def single_action_space(self) -> gym.Space:
-        """Action space for a single environment instance."""
-        return self.envs.single_action_space
-
-    @property
-    def single_observation_space(self) -> gym.Space:
-        """Observation space for a single environment instance."""
-        return self.envs.single_observation_space
 
     def close(self, **kwargs: Any) -> None:
         """Close all environments and clean up resources."""
@@ -958,7 +916,6 @@ class World:
         callables: list[dict] | None = None,
         dump_eval_trajs_path: str | Path | None = None,
         load_eval_trajs_path: str | Path | None = None,
-        eval_start_index: int = 0,
         process: dict[str, Any] | None = None,
         start_state_mode: str = 'dataset_full',
         goal_state_mode: str = 'dataset_full',
@@ -994,25 +951,19 @@ class World:
             if ep_idx_arr.size == 0:
                 ep_idx_arr = np.arange(len(data), dtype=np.int64)
 
-            eval_start_index = int(eval_start_index)
-            if eval_start_index < 0:
-                raise ValueError('eval_start_index must be non-negative')
-
-            eval_end_index = eval_start_index + self.num_envs
-            if len(data) < eval_end_index:
+            if len(data) < self.num_envs:
                 raise ValueError(
                     f'Loaded eval trajectories contain {len(data)} episodes, '
-                    f'but requested indices [{eval_start_index}, {eval_end_index}). '
-                    'Decrease eval.num_eval, decrease eval.start_index, or use a larger loaded file.'
+                    f'fewer than num_envs={self.num_envs}. Decrease eval.num_eval.'
                 )
 
-            if len(data) > self.num_envs or eval_start_index > 0:
+            if len(data) > self.num_envs:
                 logging.info(
-                    f'Loaded {len(data)} episodes; using trajectories '
-                    f'[{eval_start_index}, {eval_end_index}) to match num_envs.'
+                    f'Loaded {len(data)} episodes; using the first {self.num_envs} '
+                    'to match num_envs.'
                 )
-                data = data[eval_start_index:eval_end_index]
-                ep_idx_arr = ep_idx_arr[eval_start_index:eval_end_index]
+                data = data[:self.num_envs]
+                ep_idx_arr = ep_idx_arr[:self.num_envs]
 
             data = _pad_loaded_eval_trajectories(data, columns)
         else:
@@ -1192,15 +1143,6 @@ class World:
                         goal_info[key] = deepcopy(init_step[key][i])
                 if goal_info:
                     set_goal_info(**goal_info)
-
-        for i, env in enumerate(self.envs.unwrapped.envs):
-            env_unwrapped = env.unwrapped
-
-            # TODO remove this
-            if 'goal_state' in init_step and 'goal_state' in goal_step:
-                assert np.array_equal(
-                    init_step['goal_state'][i], goal_step['goal_state'][i]
-                ), 'Goal state info does not match at reset'
 
         results: dict = {
             'success_rate': 0.0,

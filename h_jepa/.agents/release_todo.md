@@ -95,6 +95,22 @@ Round 4
   `non_proprio_state_normalized_l2`, `expert_action_l2`, `peak_gpu_mem_bytes`, the code computing
   them (final-state/xy/proprio and executed-action tracking, `World.last_actions`) and the
   `eval.expert_action_distance_{horizon,dims}` keys
+- planning: `World.__init__` args `goal_transform` / `image_transform` / `extra_wrappers` /
+  `goal_conditioned`, the `World` space properties, `eval.start_index`, the goal_state assert loop;
+  on-the-fly eval-task sampling in `planning_eval.py` (`random`, `cube_pickup_centered[_lift]`; the
+  Push-T dump always uses `stratified`), `_build_process`; `resolve_horizon=False` paths and the
+  `resolve_horizon` key (horizons always follow the decreasing schedule), list-valued horizon /
+  `cost_last_n`, the `horizon=` override, `level_span` / `_level_span`, `history_len`, per-level
+  `receding_horizon`, `_execution_plan_config`; upper-level pixel+proprio fusion in the hierarchical
+  solver, the `goal_{pixel,proprio}_embed_0` / extra `predicted_*` cost keys, solver outputs other
+  than `actions` / `predictions` (cost histories, per-level results, `goal_embeddings`,
+  `video_subgoal`), the `get_cost_components` split in the level adapter, the `jepas` fallback and
+  list-form `solvers`; `swm.policy.ExpertPolicy`, `Actionable`, the duplicate `action_buffer`,
+  `_solver_supports_budget_args`; eval keys `output.filename`, `world.image_shape`,
+  `eval.pickup_height_delta`, `eval.traj_sampling_mode`, FourRoom `world.max_episode_steps: 400`
+  (now `???` like the others); `Dataset` base class merged into `HDF5Dataset`, its `transform`
+  constructor arg (the attribute stays: training and probing set it), `load_episode`, the
+  `kernel_size` alias
 
 ## Kept on purpose
 
@@ -110,6 +126,8 @@ Round 4
 - multi-step rollout loss, pixel/proprio loss components and the
   legacy flat loss format, intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per
   request).
+- callables `in_dataset: false` args (Cube's constant `cube_id: 0`; the audit wrongly listed it as
+  unused).
 
 ## Unused features (candidates for removal)
 
@@ -142,34 +160,10 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
 
 ### Safe dead code: planning
 - [ ] `World.evaluate`.
-- [x] `World.__init__` args `goal_transform`, `image_transform`, `extra_wrappers`,
-  `goal_conditioned`; unused space properties; `eval_start_index` / `eval.start_index`; the
-  `in_dataset: False` callables branch; the "TODO remove this" goal_state assert loop.
-- [x] `planning_eval.py` on-the-fly task sampling (`random`, `cube_pickup_centered[_lift]`,
-  `_sample_cube_pickup_eval_starts`, the no-load/no-dump branch; keep `stratified` dump for Push-T
-  and `get_episodes_length`); `_build_process` (never called); `load_eval_config` `config_path`
-  branch; the error message pointing at a nonexistent `scripts/regenerate_training_normalizer.py`.
 - [ ] `num_subgoals` > 1 in hierarchical planning (1 everywhere).
-- [x] `resolve_horizon=False` paths, list-valued horizon / `cost_last_n` schedules, `horizon=`
-  override, `level_span` / `_level_span`, per-level `history_len` / `receding_horizon`, shared
-  `history_len`, `_execution_plan_config` (`eval_config_utils.py`, `solver.py`,
-  `hierarchical_solver.py`, `PlanConfig.history_len`).
-- [x] `hierarchical_solver.py`: upper-level pixel+proprio fusion branches (only Ant level 1 uses
-  proprio), `goal_{pixel,proprio}_embed_0` and extra `predicted_*` cost keys, outputs
-  `video_subgoal` / `goal_embeddings` / per-level, `jepas` fallback in `_extract_level_models`,
-  list-form `solvers`, duplicate level-key validation. Keep the window padding and the pixel
-  `_latest_context_window` (window_size > 1); only its proprio copy goes with the fusion branches.
-- [x] `gd.py`: cost-history outputs (`cost`, `costs`, `best_cost`, `action_cost*`; per-step GPU
-  sync), `get_cost` / `rollout` fallbacks, `level_span` arg, `_configured`, discrete-action warning;
-  `_rollout_final_actions` for the flat solver (medium).
-- [x] `policy.py`: `ExpertPolicy`, `Actionable`, `VALID_LAST_INDEX_KEY`, duplicate `action_buffer`,
-  `_solver_supports_budget_args`; fold `AutoCostModel` / `_load_model_with_attribute` into the
-  hierarchical load path (medium).
-- [x] Eval config keys: `output.filename`, `world.image_shape` (+ its deletion code),
-  fourroom `world.max_episode_steps` (overwritten), cube `eval.pickup_height_delta`,
-  `eval.traj_sampling_mode`.
-- [x] `data/dataset.py`: `transform` param, broken `load_episode`, `kernel_size` alias for
-  `window_size`; merge the `Dataset` base into `HDF5Dataset` (cosmetic).
+- [x] `gd.py`: `_rollout_final_actions` for the flat solver (medium).
+- [x] `policy.py`: fold `AutoCostModel` / `_load_model_with_attribute` into the hierarchical load
+  path (medium).
 
 ### Safe dead code: training and models
 - [x] Legacy checkpoint aliases (`register_legacy_checkpoint_module_aliases` in `utils.py` and its
@@ -217,6 +211,8 @@ probes only (no decoders: the `levelN.train_decoder` overrides live in the train
   `optimizer.prober` equal to the base, `probe_targets: null`.
 
 ### Safe dead code: scripts
+- [ ] `load_eval_config` `config_path` branch: only the generators' `--config-path` flags still pass
+  it (moved here from the planning section).
 - [ ] `generate_dataset_eval_trajs.py`: `random` and `_lift` modes, upright/moving filters (9 flags
   incl. legacy aliases), videos, `--max-attempts`, `--pickup-height-delta`, `--config-path`,
   positional overrides, `--num-episodes`. Check the output stays bit-identical.

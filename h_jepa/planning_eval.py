@@ -128,30 +128,6 @@ def resolve_results_dir(
     return Path(__file__).parent
 
 
-def _build_process(cfg: DictConfig, dataset):
-    process = {}
-    process_cols = list(cfg.dataset.keys_to_cache)
-    keys_to_merge = cfg.dataset.get("keys_to_merge", None)
-    if keys_to_merge is not None:
-        for target_col in keys_to_merge.keys():
-            if target_col not in process_cols:
-                process_cols.append(target_col)
-
-    for col in process_cols:
-        if col == "pixels":
-            continue
-        processor = preprocessing.StandardScaler()
-        col_data = dataset.get_col_data(col)
-        col_data = col_data[~np.isnan(col_data).any(axis=1)]
-        processor.fit(col_data)
-        process[col] = processor
-
-        if col != "action":
-            process[f"goal_{col}"] = process[col]
-
-    return process
-
-
 def _required_process_columns(cfg: DictConfig) -> list[str]:
     columns = []
     for col in cfg.dataset.keys_to_cache:
@@ -207,8 +183,7 @@ def _load_policy_normalizer_artifact(cfg: DictConfig) -> dict:
     if not normalizer_path.exists():
         raise FileNotFoundError(
             "Training normalizer artifact not found for policy checkpoint. "
-            f"Expected: {normalizer_path}. "
-            "Generate it with scripts/regenerate_training_normalizer.py."
+            f"Expected: {normalizer_path}."
         )
     return load_normalizer_artifact(normalizer_path)
 
@@ -326,48 +301,6 @@ def _solver_requires_grad(cfg: DictConfig) -> bool:
     return _has_grad_solver(solver_cfg)
 
 
-def _sample_eval_starts(cfg: DictConfig, dataset):
-    sampling_mode = str(cfg.eval.get("traj_sampling_mode", "random"))
-    if sampling_mode == "cube_pickup_centered":
-        return _sample_cube_pickup_eval_starts(cfg, dataset, center_on="grasp")
-    if sampling_mode == "cube_pickup_centered_lift":
-        return _sample_cube_pickup_eval_starts(cfg, dataset, center_on="lift")
-    if sampling_mode == "stratified":
-        return _sample_stratified_eval_starts(cfg, dataset)
-    if sampling_mode != "random":
-        raise ValueError(f"Unsupported eval trajectory sampling mode: {sampling_mode}")
-
-    col_name = "episode_idx" if "episode_idx" in dataset.column_names else "ep_idx"
-    ep_indices, _ = np.unique(dataset.get_col_data(col_name), return_index=True)
-
-    episode_len = get_episodes_length(dataset, ep_indices)
-    max_start_idx = episode_len - cfg.eval.goal_offset_steps - 1
-    max_start_idx_dict = {
-        ep_id: max_start_idx[i] for i, ep_id in enumerate(ep_indices)
-    }
-    max_start_per_row = np.array(
-        [max_start_idx_dict[ep_id] for ep_id in dataset.get_col_data(col_name)]
-    )
-
-    valid_mask = dataset.get_col_data("step_idx") <= max_start_per_row
-    valid_indices = np.nonzero(valid_mask)[0]
-    print(valid_mask.sum(), "valid starting points found for evaluation.")
-
-    g = np.random.default_rng(cfg.seed)
-    random_episode_indices = g.choice(
-        len(valid_indices) - 1, size=cfg.eval.num_eval, replace=False
-    )
-    random_episode_indices = np.sort(valid_indices[random_episode_indices])
-
-    eval_episodes = dataset.get_row_data(random_episode_indices)[col_name]
-    eval_start_idx = dataset.get_row_data(random_episode_indices)["step_idx"]
-
-    if len(eval_episodes) < cfg.eval.num_eval:
-        raise ValueError("Not enough episodes with sufficient length for evaluation.")
-
-    return eval_episodes, eval_start_idx
-
-
 def _sample_stratified_eval_starts(cfg: DictConfig, dataset):
     """Balance eval starts across trajectories, then space them out within each.
 
@@ -427,90 +360,6 @@ def _sample_stratified_eval_starts(cfg: DictConfig, dataset):
     return np.array(eval_episodes), np.array(eval_start_idx)
 
 
-def _sample_cube_pickup_eval_starts(cfg: DictConfig, dataset, center_on="grasp"):
-    required_cols = ["privileged_block_0_pos"]
-    if center_on == "grasp":
-        required_cols.append("proprio_gripper_contact")
-    for required in required_cols:
-        if required not in dataset.column_names:
-            raise ValueError(
-                f"cube_pickup_centered sampling requires '{required}'."
-            )
-
-    goal_offset_steps = int(cfg.eval.goal_offset_steps)
-    midpoint = goal_offset_steps // 2
-    height_delta = float(cfg.eval.get("pickup_height_delta", 0.02))
-    contact_threshold = float(cfg.eval.get("pickup_contact_threshold", 0.5))
-
-    block_pos = dataset.get_col_data("privileged_block_0_pos")
-    if block_pos.ndim != 2 or block_pos.shape[1] < 3:
-        raise ValueError(
-            "'privileged_block_0_pos' must have shape [num_steps, >=3]."
-        )
-    if center_on == "grasp":
-        contact_col = dataset.get_col_data("proprio_gripper_contact")
-        contact_col = contact_col[:, 0] if contact_col.ndim == 2 else contact_col
-
-    candidate_episodes = []
-    candidate_starts = []
-    for episode_idx, (offset, length) in enumerate(zip(dataset.offsets, dataset.lengths)):
-        if length < goal_offset_steps:
-            continue
-
-        z_pos = block_pos[offset:offset + length, 2]
-        lifted_steps = np.flatnonzero(z_pos >= z_pos[0] + height_delta)
-        if lifted_steps.size == 0:
-            continue
-        lift_step = int(lifted_steps[0])
-
-        if center_on == "lift":
-            center_step = lift_step
-        else:
-            # Center on the grasp, not the lift: walk back from the lift over the
-            # contiguous gripper-contact run to the step contact began. The lift
-            # only fires once the cube is airborne (~4-5 steps after the grasp).
-            contact = contact_col[offset:offset + length] >= contact_threshold
-            if contact[lift_step]:
-                grasp_end = lift_step
-            else:
-                prior_contact = np.flatnonzero(contact[:lift_step + 1])
-                if prior_contact.size == 0:
-                    continue
-                grasp_end = int(prior_contact[-1])
-            grasp_step = grasp_end
-            while grasp_step - 1 >= 0 and contact[grasp_step - 1]:
-                grasp_step -= 1
-            center_step = grasp_step
-
-        start_step = center_step - midpoint
-        end_step = start_step + goal_offset_steps
-        if start_step < 0 or end_step > length:
-            continue
-
-        candidate_episodes.append(episode_idx)
-        candidate_starts.append(start_step)
-
-    num_candidates = len(candidate_episodes)
-    print(
-        num_candidates,
-        "pickup-centered cube starting points found for evaluation.",
-    )
-    if num_candidates < cfg.eval.num_eval:
-        raise ValueError(
-            "Not enough pickup-centered cube segments for evaluation: "
-            f"requested {cfg.eval.num_eval}, found {num_candidates}."
-        )
-
-    g = np.random.default_rng(cfg.seed)
-    sampled_indices = np.sort(
-        g.choice(num_candidates, size=cfg.eval.num_eval, replace=False)
-    )
-
-    eval_episodes = np.asarray(candidate_episodes, dtype=np.int64)[sampled_indices]
-    eval_start_idx = np.asarray(candidate_starts, dtype=np.int64)[sampled_indices]
-    return eval_episodes, eval_start_idx
-
-
 def _serialize_metrics(metrics: dict):
     metrics_to_save = {}
     for key, value in metrics.items():
@@ -553,8 +402,6 @@ def run_planning_eval(
 
     cfg.world.max_episode_steps = 2 * cfg.eval.eval_budget
     world_cfg = OmegaConf.create(OmegaConf.to_container(cfg.world, resolve=True))
-    if "image_shape" in world_cfg:
-        del world_cfg["image_shape"]
 
     transform = {
         "pixels": img_transform(cfg),
@@ -580,22 +427,15 @@ def run_planning_eval(
 
     if dump_eval_only:
         dataset = get_dataset(cfg, cfg.eval.dataset_name)
-        eval_episodes, eval_start_idx = _sample_eval_starts(cfg, dataset)
-    elif load_eval_trajs_path:
-        process = _build_eval_process_from_policy_normalizer(cfg, model=model)
+        eval_episodes, eval_start_idx = _sample_stratified_eval_starts(cfg, dataset)
     else:
-        dataset = get_dataset(cfg, cfg.eval.dataset_name)
         process = _build_eval_process_from_policy_normalizer(cfg, model=model)
-        eval_episodes, eval_start_idx = _sample_eval_starts(cfg, dataset)
 
     world = swm.World(**world_cfg, image_shape=image_shape)
 
     try:
         policy = _build_policy(cfg, process, transform, model=model)
         world.set_policy(policy)
-
-        if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
 
         start_time = time.time()
         solver_requires_grad = _solver_requires_grad(cfg)
@@ -605,7 +445,6 @@ def run_planning_eval(
             sdp_context = sdpa_kernel(SDPBackend.MATH)
 
         with grad_context(), sdp_context:
-            eval_start_index = int(cfg.eval.get("start_index", 0))
             callables = OmegaConf.to_container(
                 cfg.eval.get("callables"), resolve=True
             )
@@ -624,7 +463,6 @@ def run_planning_eval(
                 callables=callables,
                 dump_eval_trajs_path=dump_eval_trajs_path,
                 load_eval_trajs_path=load_eval_trajs_path,
-                eval_start_index=eval_start_index,
                 process=process,
                 start_state_mode=cfg.eval.get(
                     "start_state_mode", "dataset_full"
@@ -641,7 +479,7 @@ def run_planning_eval(
         payload = torch.load(dump_eval_trajs_path, weights_only=False)
         payload["task_info"] = {
             "dataset_name": str(cfg.eval.dataset_name),
-            "sampling_mode": str(cfg.eval.get("traj_sampling_mode", "random")),
+            "sampling_mode": "stratified",
             "seed": int(cfg.seed),
             "num_episodes": int(cfg.eval.num_eval),
             "eval_config": OmegaConf.to_container(cfg, resolve=False),

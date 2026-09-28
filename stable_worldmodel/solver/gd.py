@@ -6,10 +6,8 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 import torch
-from gymnasium.spaces import Box
-from loguru import logger as logging
 
-from .solver import Costable, get_planning_horizon, resolve_cost_last_n
+from .solver import Costable, get_planning_horizon
 
 
 class GradientSolver(torch.nn.Module):
@@ -65,7 +63,6 @@ class GradientSolver(torch.nn.Module):
             optimizer_kwargs if optimizer_kwargs is not None else {'lr': 1.0}
         )
 
-        self._configured = False
         self._n_envs = None
         self._action_dim = None
         self._config = None
@@ -90,12 +87,6 @@ class GradientSolver(torch.nn.Module):
             self._action_dim = int(np.prod(action_space.shape[1:]))
         else:
             self._action_dim = int(config.action_dim)
-        self._configured = True
-
-        if not isinstance(action_space, Box):
-            logging.warning(
-                f'Action space is discrete, got {type(action_space)}. GradientSolver may not work as expected.'
-            )
 
     def _expand_info_dict_for_samples(
         self,
@@ -141,9 +132,6 @@ class GradientSolver(torch.nn.Module):
     @torch.inference_mode()
     def _rollout_final_actions(self, info_dict: dict, actions: torch.Tensor) -> dict:
         """Roll out the model once with optimized actions and return predictions."""
-        if not hasattr(self.model, 'rollout'):
-            return {}
-
         action_candidates = actions.to(self.device).unsqueeze(1)
         info_dict = self._expand_info_dict_for_samples(
             info_dict, start_idx=0, end_idx=self.n_envs, num_samples=1
@@ -277,41 +265,19 @@ class GradientSolver(torch.nn.Module):
         planning_horizon: int | None = None,
         steps_taken: int | None = None,
         eval_budget: int | None = None,
-        level_span: int | None = None,
     ) -> dict:
         """Solve the planning problem using gradient descent."""
         start_time = time.time()
-        replanning_interval = int(self._config.receding_horizon) * int(self._config.action_block)
-        cost_last_n = resolve_cost_last_n(
-            cost_last_n=getattr(self._config, 'cost_last_n', 1),
-            replanning_interval=replanning_interval,
-            steps_taken=steps_taken,
-        )
-        intermediate_cost_weight = float(getattr(self._config, 'intermediate_cost_weight', 1.0))
+        cost_last_n = max(1, int(self._config.cost_last_n))
+        intermediate_cost_weight = float(self._config.intermediate_cost_weight)
         if planning_horizon is None:
             planning_horizon = get_planning_horizon(
                 configured_horizon=self.horizon,
-                resolve_horizon=bool(getattr(self._config, 'resolve_horizon', False)),
-                replanning_interval=replanning_interval,
-                level_span=self._config.action_block if level_span is None else int(level_span),
+                replanning_interval=int(self._config.receding_horizon) * int(self._config.action_block),
                 steps_taken=steps_taken,
                 eval_budget=eval_budget,
             )
-
-        cost_histories: list[list[float]] = []
-        best_cost_histories: list[list[float]] = []
-        action_cost_histories: list[list[float]] = []
-        best_action_cost_histories: list[list[float]] = []
-        outputs = {
-            'cost': cost_histories,
-            'costs': cost_histories,
-            'best_cost': best_cost_histories,
-            'action_cost': action_cost_histories,
-            'action_costs': action_cost_histories,
-            'best_action_cost': best_action_cost_histories,
-            'actions': None,
-            'planning_horizon': planning_horizon,
-        }
+        outputs = {}
 
         with torch.no_grad():
             self.init_action(init_action, planning_horizon=planning_horizon)
@@ -347,10 +313,6 @@ class GradientSolver(torch.nn.Module):
             )
 
             # Perform Gradient Descent for this batch
-            batch_cost_history = [[] for _ in range(current_bs)]
-            batch_best_cost_history = [[] for _ in range(current_bs)]
-            batch_action_cost_history = [[] for _ in range(current_bs)]
-            batch_best_action_cost_history = [[] for _ in range(current_bs)]
             best_batch_score = float('inf')
             stalled_steps = 0
 
@@ -360,18 +322,7 @@ class GradientSolver(torch.nn.Module):
                 current_info['intermediate_cost_weight'] = intermediate_cost_weight
 
                 # Calculate cost using the batch parameter
-                if hasattr(self.model, 'get_cost_components'):
-                    cost_components = self.model.get_cost_components(
-                        current_info,
-                        batch_init,
-                    )
-                    costs = cost_components['total']
-                    latent_costs = cost_components['latent']
-                    action_costs = cost_components.get('weighted_action')
-                else:
-                    costs = self.model.get_cost(current_info, batch_init)
-                    latent_costs = costs
-                    action_costs = None
+                costs = self.model.get_cost(current_info, batch_init)
 
                 assert isinstance(costs, torch.Tensor), (
                     f'Got {type(costs)} cost, expect torch.Tensor'
@@ -410,37 +361,6 @@ class GradientSolver(torch.nn.Module):
                         max=upper.view(1, 1, 1, -1),
                     )
 
-                # Store one trace per environment in the same unit as the
-                # previous scalar output: sum over sampled action sequences.
-                step_costs = latent_costs.sum(dim=1).detach().cpu().tolist()
-                for env_offset, step_cost in enumerate(step_costs):
-                    batch_cost_history[env_offset].append(step_cost)
-
-                batch_indices = torch.arange(current_bs, device=costs.device)
-                best_idx = costs.argmin(dim=1)
-                step_best_costs = (
-                    latent_costs[batch_indices, best_idx].detach().cpu().tolist()
-                )
-                for env_offset, step_best_cost in enumerate(step_best_costs):
-                    batch_best_cost_history[env_offset].append(step_best_cost)
-
-                if action_costs is not None:
-                    step_action_costs = (
-                        action_costs.sum(dim=1).detach().cpu().tolist()
-                    )
-                    for env_offset, step_action_cost in enumerate(step_action_costs):
-                        batch_action_cost_history[env_offset].append(step_action_cost)
-
-                    step_best_action_costs = (
-                        action_costs[batch_indices, best_idx].detach().cpu().tolist()
-                    )
-                    for env_offset, step_best_action_cost in enumerate(
-                        step_best_action_costs
-                    ):
-                        batch_best_action_cost_history[env_offset].append(
-                            step_best_action_cost
-                        )
-
                 if self.early_stop_patience > 0:
                     total_best_costs = costs.min(dim=1).values.detach().cpu().tolist()
                     batch_score = float(np.mean(total_best_costs))
@@ -461,14 +381,6 @@ class GradientSolver(torch.nn.Module):
 
             iters_run = step + 1  # actual GD iterations for this batch (early-stop aware)
 
-            # Store cost history for each environment in the batch.
-            outputs['cost'].extend(batch_cost_history)
-            outputs['best_cost'].extend(batch_best_cost_history)
-            if any(batch_action_cost_history):
-                outputs['action_cost'].extend(batch_action_cost_history)
-            if any(batch_best_action_cost_history):
-                outputs['best_action_cost'].extend(batch_best_action_cost_history)
-
             # Update the global self.init with the optimized batch values
             with torch.no_grad():
                 self.init[start_idx:end_idx] = batch_init
@@ -477,13 +389,7 @@ class GradientSolver(torch.nn.Module):
                 final_info = expanded_infos.copy()
                 final_info['cost_last_n'] = cost_last_n
                 final_info['intermediate_cost_weight'] = intermediate_cost_weight
-                if hasattr(self.model, 'get_cost_components'):
-                    final_costs = self.model.get_cost_components(
-                        final_info,
-                        batch_init,
-                    )['total']
-                else:
-                    final_costs = self.model.get_cost(final_info, batch_init)
+                final_costs = self.model.get_cost(final_info, batch_init)
 
             top_idx = torch.argsort(final_costs, dim=1)[:, 0]
             batch_indices = torch.arange(current_bs, device=batch_init.device)

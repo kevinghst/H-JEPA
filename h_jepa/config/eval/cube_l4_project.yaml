@@ -92,7 +92,6 @@ solver:
       optimizer_kwargs:
         lr: 0.1
 hierarchical_plan_config:
-  resolve_horizon: true
   receding_horizon: 2
   level1:
     horizon: 4
@@ -123,8 +122,6 @@ hierarchical_plan_config:
 eval:
   num_eval: 50
   goal_offset_steps: 20
-  traj_sampling_mode: random
-  pickup_height_delta: 0.02
   eval_budget: 30
   img_size: 224
   dataset_name: cube_single_expert_val
@@ -146,4 +143,3 @@ eval:
         value: goal_privileged_block_0_quat
 output:
   dir: null
-  filename: ogb_cube_results.txt

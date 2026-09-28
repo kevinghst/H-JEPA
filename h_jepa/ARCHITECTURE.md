@@ -279,8 +279,8 @@ context window instead of repeating the current one.
 
 **Cross-level state cost**: level-N rollout produces latents in level-N space. To measure progress toward level-(N+1) subgoals, the adapter feeds the whole predicted lower-level stream into level-(N+1)'s `JEPA.encode` with `chunk_temporal_inputs=True`. The upper JEPA applies its own `temporal_stride` and `temporal_window_size`.
 
-When `hierarchical_plan_config.resolve_horizon` is enabled, each level must use
-an integer `horizon`. The solver precomputes one horizon per solver call. The
+Each level uses an integer `horizon`, and the solver derives one horizon per
+solver call from it and the eval budget (flat planning does the same). The
 highest level decreases monotonically from its configured horizon to `1`; each
 lower level stays at its configured horizon until the next upper level reaches
 `1`, then decreases over that remaining suffix. Lower levels can set

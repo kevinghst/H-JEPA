@@ -157,7 +157,7 @@ class MixedHDF5Dataset:
         return dims[0]
 
 
-def build_hdf5_dataset(dataset_cfg, cache_dir=None, transform=None):
+def build_hdf5_dataset(dataset_cfg, cache_dir=None):
     if OmegaConf.is_config(dataset_cfg):
         cfg = OmegaConf.to_container(dataset_cfg, resolve=True)
     else:
@@ -170,7 +170,7 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None, transform=None):
         cfg.pop("subset_unit", None)
         subset_seed = int(cfg.pop("subset_seed", 0))
         total_transitions = cfg.pop("total_transitions", None)
-        dataset = swm.data.HDF5Dataset(**cfg, transform=transform, cache_dir=cache_dir)
+        dataset = swm.data.HDF5Dataset(**cfg, cache_dir=cache_dir)
         if total_transitions is not None:
             episodes = _select_episodes_for_transition_budget(
                 dataset, int(total_transitions), np.random.default_rng(subset_seed)
@@ -223,7 +223,7 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None, transform=None):
         child_cfg = dict(cfg)
         child_cfg.update(source_cfg)
         source_datasets.append(
-            swm.data.HDF5Dataset(**child_cfg, transform=transform, cache_dir=cache_dir)
+            swm.data.HDF5Dataset(**child_cfg, cache_dir=cache_dir)
         )
         source_proportions.append(proportion)
         source_names.append(str(name))

@@ -9,10 +9,7 @@ wandb:
 world:
   env_name: swm/FourRoomDistractors-v0
   num_envs: ${eval.num_eval}
-  max_episode_steps: 400
-  image_shape:
-  - 224
-  - 224
+  max_episode_steps: ???
   target_min_steps: null
   agent_speed: 2.5
   agent_radius: 3.5
@@ -105,7 +102,6 @@ solver:
       optimizer_kwargs:
         lr: 0.1
 hierarchical_plan_config:
-  resolve_horizon: true
   receding_horizon: 2
   level1:
     horizon: 2
@@ -131,7 +127,6 @@ hierarchical_plan_config:
 eval:
   num_eval: 50
   goal_offset_steps: 60
-  traj_sampling_mode: random
   eval_budget: 210
   img_size: 224
   dataset_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
@@ -150,4 +145,3 @@ eval:
         value: distractor_xy
 output:
   dir: null
-  filename: fourroom_results.txt

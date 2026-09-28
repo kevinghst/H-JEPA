@@ -71,7 +71,6 @@ solver:
       optimizer_kwargs:
         lr: 0.075
 hierarchical_plan_config:
-  resolve_horizon: true
   receding_horizon: 2
   level1:
     horizon: 2
@@ -92,7 +91,6 @@ hierarchical_plan_config:
     cost_last_n: 1
 eval:
   num_eval: 50
-  traj_sampling_mode: stratified
   goal_offset_steps: 75
   eval_budget: 90
   img_size: 224
@@ -108,4 +106,3 @@ eval:
         value: goal_state
 output:
   dir: null
-  filename: pusht_results.txt

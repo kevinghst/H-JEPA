@@ -54,7 +54,6 @@ solver:
   optimizer_kwargs:
     lr: 0.3
 plan_config:
-  resolve_horizon: true
   horizon: 23
   receding_horizon: 2
   action_block: 5
@@ -62,7 +61,6 @@ plan_config:
 eval:
   num_eval: 50
   goal_offset_steps: 25
-  traj_sampling_mode: random
   start_state_mode: xy_neutral
   goal_state_mode: xy_neutral
   eval_budget: 350
@@ -81,4 +79,3 @@ eval:
         value: goal_xy
 output:
   dir: null
-  filename: ogb_ant_results.txt

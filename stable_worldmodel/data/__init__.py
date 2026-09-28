@@ -1,8 +1,7 @@
 from . import utils
-from .dataset import Dataset, HDF5Dataset
+from .dataset import HDF5Dataset
 
 __all__ = [
     'utils',
-    'Dataset',
     'HDF5Dataset',
 ]

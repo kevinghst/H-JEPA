@@ -274,7 +274,7 @@ def run(cfg):
     dataset_cfg = {k: v for k, v in cfg.data.dataset.items() if k != "val_name"}
     val_total_transitions = dataset_cfg.pop("val_total_transitions", None)
     val_name = cfg.data.dataset.get("val_name", None)
-    train_dataset = build_hdf5_dataset(dataset_cfg, transform=None, cache_dir=cache_dir)
+    train_dataset = build_hdf5_dataset(dataset_cfg, cache_dir=cache_dir)
 
     val_dataset = None
     if isinstance(val_name, str) and val_name.strip():
@@ -285,9 +285,7 @@ def run(cfg):
         val_dataset_cfg["name"] = val_name
         if val_total_transitions is not None:
             val_dataset_cfg["total_transitions"] = int(val_total_transitions)
-        val_dataset = build_hdf5_dataset(
-            val_dataset_cfg, transform=None, cache_dir=cache_dir
-        )
+        val_dataset = build_hdf5_dataset(val_dataset_cfg, cache_dir=cache_dir)
 
     extra_transforms = []
     for col in cfg.data.dataset.keys_to_load:

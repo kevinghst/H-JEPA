@@ -11,8 +11,6 @@ import torch.nn.functional as F
 from torch import nn
 
 from .solver import (
-    configured_planning_horizon,
-    get_planning_horizon,
     num_planning_calls,
     planning_call_index,
     decreasing_horizon_schedule,
@@ -183,10 +181,10 @@ class _HierarchicalLevelModel(nn.Module):
         use_upper_space: bool = True,
         dense_upper_goal_projection: bool = False,
         goal_level: int | None = None,
-    ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Encode predicted embeddings through the upper-level JEPA encoder(s)."""
         if self.upper_model is None or not use_upper_space:
-            return {"predicted_embed_0": pred_emb}, None
+            return pred_emb, None
         if goal_level is None:
             goal_level = self.level + 1
 
@@ -203,30 +201,8 @@ class _HierarchicalLevelModel(nn.Module):
         flat_pred, sample_shape = self._flatten_samples(prepared_pred)
 
         input_key = f'embed_{self.level}'
-        encode_info = {input_key: flat_pred}
-        upper_encoder = getattr(self.upper_model, 'encoder', None)
-        if (
-            hasattr(upper_encoder, 'pixel_encoder')
-            and hasattr(upper_encoder, 'proprio_encoder')
-        ):
-            pixel_dim = self._encoder_input_dim(upper_encoder.pixel_encoder)
-            proprio_dim = self._encoder_input_dim(upper_encoder.proprio_encoder)
-            expected_dim = pixel_dim + proprio_dim
-            if flat_pred.size(-1) != expected_dim:
-                raise ValueError(
-                    "Cannot split lower prediction for upper fusion encoder: "
-                    f"expected {expected_dim} from pixel ({pixel_dim}) + "
-                    f"proprio ({proprio_dim}), got {flat_pred.size(-1)}."
-                )
-            input_key = f'pixel_embed_{self.level}'
-            model_proprio_key = getattr(upper_encoder, 'proprio_key', 'proprio')
-            encode_info = {
-                input_key: flat_pred[..., :pixel_dim],
-                model_proprio_key: flat_pred[..., pixel_dim:],
-            }
-
         upper_out = self.upper_model.encode(
-            encode_info,
+            {input_key: flat_pred},
             key=input_key,
             chunk_temporal_inputs=True,
             temporal_stride=temporal_stride,
@@ -234,16 +210,7 @@ class _HierarchicalLevelModel(nn.Module):
         for upper_level in range(self.level + 2, goal_level + 1):
             upper_out = self._encode_next_level(upper_out, upper_level, temporal_stride)
 
-        pred_for_cost = {}
-        for output_name in ("embed", "pixel_embed", "proprio_embed"):
-            output_key = f"{output_name}_0"
-            if output_key not in upper_out:
-                continue
-            pred_key = f"predicted_{output_name}_0"
-            pred_for_cost[pred_key] = self._restore_samples(
-                upper_out[output_key],
-                sample_shape,
-            )
+        pred_for_cost = self._restore_samples(upper_out["embed_0"], sample_shape)
         action_for_cost = None
         if action_candidates is not None:
             action_for_cost = self._project_actions_with_upper(
@@ -264,35 +231,12 @@ class _HierarchicalLevelModel(nn.Module):
     ) -> dict[str, torch.Tensor]:
         """Encode one level's dense (stride-1) output stream through the level above it."""
         jepa = self.upper_models[upper_level - self.level - 1]
-        encoder = getattr(jepa, 'encoder', None)
-        if hasattr(encoder, 'pixel_encoder') and hasattr(encoder, 'proprio_encoder'):
-            input_key = f'pixel_embed_{upper_level - 1}'
-            encode_info = {
-                input_key: lower_out['pixel_embed_0'],
-                getattr(encoder, 'proprio_key', 'proprio'): lower_out['proprio_embed_0'],
-            }
-        else:
-            input_key = f'embed_{upper_level - 1}'
-            encode_info = {input_key: lower_out['embed_0']}
+        input_key = f'embed_{upper_level - 1}'
         return jepa.encode(
-            encode_info,
+            {input_key: lower_out['embed_0']},
             key=input_key,
             chunk_temporal_inputs=True,
             temporal_stride=temporal_stride,
-        )
-
-    @staticmethod
-    def _encoder_input_dim(projected_encoder: nn.Module) -> int:
-        encoder = getattr(projected_encoder, 'encoder', projected_encoder)
-        input_norm = getattr(encoder, 'input_norm', None)
-        normalized_shape = getattr(input_norm, 'normalized_shape', None)
-        if normalized_shape is not None and len(normalized_shape) == 1:
-            return int(normalized_shape[0])
-        input_dim = getattr(encoder, 'input_dim', None)
-        if input_dim is not None:
-            return int(input_dim)
-        raise AttributeError(
-            f"Could not infer input dimension for {type(projected_encoder).__name__}."
         )
 
     def _action_cost(
@@ -316,11 +260,7 @@ class _HierarchicalLevelModel(nn.Module):
         )
         return cost.sum(dim=tuple(range(2, cost.ndim)))
 
-    def get_cost_components(
-        self,
-        info_dict: dict,
-        action_candidates: torch.Tensor,
-    ) -> dict[str, torch.Tensor | None]:
+    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor) -> torch.Tensor:
         device = next(self.model.parameters()).device
         for k, v in list(info_dict.items()):
             if torch.is_tensor(v):
@@ -343,35 +283,13 @@ class _HierarchicalLevelModel(nn.Module):
         )
 
         cost_info = dict(info_dict)
-        cost_info[f"predicted_embed_{self.level}"] = pred_emb
-        cost_info.update(pred_for_cost)
-        if self.upper_model is not None and use_upper_space:
-            upper_level = goal_level
-            for pred_key, pred_value in pred_for_cost.items():
-                suffix = pred_key.removeprefix("predicted_").removesuffix("_0")
-                cost_info[f"predicted_{suffix}_{upper_level}"] = pred_value
-        latent_cost = self.model.criterion(cost_info)
-        weighted_action_cost = None
+        cost_info["predicted_embed_0"] = pred_for_cost
+        cost = self.model.criterion(cost_info)
         if action_weight != 0.0:
-            action_cost = self._action_cost(
-                action_for_cost,
-                cost_info,
-            )
+            action_cost = self._action_cost(action_for_cost, cost_info)
             if action_cost is not None:
-                weighted_action_cost = action_weight * action_cost
-
-        total_cost = latent_cost
-        if weighted_action_cost is not None:
-            total_cost = total_cost + weighted_action_cost
-
-        return {
-            "total": total_cost,
-            "latent": latent_cost,
-            "weighted_action": weighted_action_cost,
-        }
-
-    def get_cost(self, info_dict: dict, action_candidates: torch.Tensor) -> torch.Tensor:
-        return self.get_cost_components(info_dict, action_candidates)["total"]
+                cost = cost + action_weight * action_cost
+        return cost
 
 
 class HierarchicalSolver:
@@ -389,7 +307,6 @@ class HierarchicalSolver:
     ) -> None:
         self.model = model
 
-        self._configured = False
         self._n_envs: int | None = None
         self._action_dim: int | None = None
         self._config: Any = None
@@ -412,17 +329,7 @@ class HierarchicalSolver:
     @staticmethod
     def _extract_level_models(model: Any) -> list[Any]:
         """Extract a list of per-level models from a hierarchical container."""
-        if hasattr(model, 'num_levels') and hasattr(model, 'get_level'):
-            num_levels = int(model.num_levels)
-            return [model.get_level(level) for level in range(1, num_levels + 1)]
-
-        if hasattr(model, 'jepas'):
-            return list(model.jepas)
-
-        raise TypeError(
-            'HierarchicalSolver expects a hierarchical model with either '
-            "'num_levels' + 'get_level(level)' or a 'jepas' attribute."
-        )
+        return [model.get_level(level) for level in range(1, int(model.num_levels) + 1)]
 
     def configure(self, *, action_space: gym.Space, n_envs: int, config: Any) -> None:
         """Configure all child solvers with shared environment settings."""
@@ -430,7 +337,6 @@ class HierarchicalSolver:
         self._n_envs = n_envs
         self._config = config
         self._action_dim = int(np.prod(action_space.shape[1:]))
-        self._configured = True
 
         for level in sorted(self.level_solvers):
             self.level_solvers[level].configure(
@@ -473,43 +379,14 @@ class HierarchicalSolver:
             self._level_plan_config(1).action_block
         )
 
-    def _level_span(
-        self,
-        level: int,
-        *,
-        steps_taken: int | None = None,
-        eval_budget: int | None = None,
-    ) -> int:
-        """Return how many environment steps one prediction step at this level spans."""
-        if level < 1 or level > len(self.level_models):
-            raise ValueError(f'Invalid hierarchy level {level}.')
-
-        if level == 1:
-            return int(self._level_plan_config(1).action_block)
-
-        lower_span = self._level_span(
-            level - 1,
-            steps_taken=steps_taken,
-            eval_budget=eval_budget,
-        )
-        lower_cfg = self._level_plan_config(level - 1)
-        lower_horizon = configured_planning_horizon(
-            configured_horizon=lower_cfg.horizon,
-            resolve_horizon=False,
-            replanning_interval=self._replanning_interval(),
-            steps_taken=steps_taken,
-            eval_budget=eval_budget,
-        )
-        return lower_span * lower_horizon
-
     @staticmethod
     def _configured_int_horizon(configured_horizon: Any, *, level: int) -> int:
         try:
             horizon = int(configured_horizon)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                'Expected integer horizon when hierarchical resolve_horizon is '
-                f'enabled, got {type(configured_horizon).__name__} for level {level}.'
+                'Expected integer horizon, '
+                f'got {type(configured_horizon).__name__} for level {level}.'
             ) from exc
         if horizon <= 0:
             raise ValueError(
@@ -538,8 +415,8 @@ class HierarchicalSolver:
         """Build recursive per-level horizon schedules for one evaluation."""
         if eval_budget is None:
             raise ValueError(
-                'hierarchical resolve_horizon requires eval_budget so the solver '
-                'can precompute horizon schedules.'
+                'Hierarchical planning requires eval_budget to build the '
+                'horizon schedules.'
             )
 
         calls = num_planning_calls(
@@ -605,21 +482,9 @@ class HierarchicalSolver:
         """Make solver callable, forwarding to solve()."""
         return self.solve(*args, **kwargs)
 
-    def _level_input_key(self, level: int) -> str:
-        if level == 1:
-            return 'pixels'
-        if self._level_uses_proprio(level):
-            return f'pixel_embed_{level - 1}'
-
-        return f'embed_{level - 1}'
-
-    def _level_uses_proprio(self, level: int) -> bool:
-        encoder = getattr(self.level_models[level - 1], 'encoder', None)
-        return hasattr(encoder, 'pixel_encoder') and hasattr(encoder, 'proprio_encoder')
-
     @staticmethod
-    def _level_proprio_key(level: int) -> str:
-        return f'proprio_embed_{level - 1}'
+    def _level_input_key(level: int) -> str:
+        return 'pixels' if level == 1 else f'embed_{level - 1}'
 
     @staticmethod
     def _latest_context_window(x: torch.Tensor, window_size: int) -> torch.Tensor:
@@ -688,21 +553,6 @@ class HierarchicalSolver:
                         encoded[input_key],
                         getattr(jepa, "temporal_window_size", 1),
                     )
-                    if self._level_uses_proprio(level):
-                        proprio_key = self._level_proprio_key(level)
-                        if proprio_key not in encoded:
-                            raise KeyError(
-                                f"Missing '{proprio_key}' for level {level} encoding."
-                            )
-                        model_proprio_key = getattr(
-                            jepa.encoder,
-                            'proprio_key',
-                            'proprio',
-                        )
-                        encoded[model_proprio_key] = self._latest_context_window(
-                            encoded[proprio_key],
-                            getattr(jepa, "temporal_window_size", 1),
-                        )
 
                 level_out = jepa.encode(
                     encoded,
@@ -710,15 +560,8 @@ class HierarchicalSolver:
                     chunk_temporal_inputs=level > 1,
                 )
 
-                if 'embed_0' not in level_out:
-                    raise KeyError(f"Level {level} JEPA encode did not return 'embed_0'.")
-                for output_name in ('embed', 'pixel_embed', 'proprio_embed'):
-                    output_key = f'{output_name}_0'
-                    if output_key not in level_out:
-                        continue
-                    level_key = f'{output_name}_{level}'
-                    encoded[level_key] = level_out[output_key]
-                    outputs[level_key] = level_out[output_key][:, -1:].detach()
+                encoded[f'embed_{level}'] = level_out['embed_0']
+                outputs[f'embed_{level}'] = level_out['embed_0'][:, -1:].detach()
 
         return outputs
 
@@ -759,11 +602,7 @@ class HierarchicalSolver:
         steps_taken: int | None = None,
         eval_budget: int | None = None,
     ) -> dict:
-        """Run hierarchical planning.
-
-        TODO: Implement hierarchical planning logic.
-        """
-        outputs = {}
+        """Plan top-down: each level's predicted latents become the goals of the level below."""
         subgoal_latents = None
         subgoal_actions = None
         horizon_one_upper_goal_level = None
@@ -771,12 +610,7 @@ class HierarchicalSolver:
         # True for the top level (trivially), and propagates down only when the substitution
         # is performed — so lower levels only anchor when the entire chain above is consistent.
         upper_anchored = True
-        resolve_horizon = bool(getattr(self._config, 'resolve_horizon', False))
-        horizon_schedules = (
-            self._resolved_horizon_schedules(eval_budget=eval_budget)
-            if resolve_horizon
-            else None
-        )
+        horizon_schedules = self._resolved_horizon_schedules(eval_budget=eval_budget)
         call_idx = planning_call_index(
             replanning_interval=self._replanning_interval(),
             steps_taken=steps_taken,
@@ -825,11 +659,6 @@ class HierarchicalSolver:
                         # upper level was not optimizing toward goal_embeddings[level+1].
                         next_goal[:, -1] = goal_embeddings[f'embed_{level + 1}'].squeeze(1)
                         this_level_anchored = True
-                    if level == 1 and next_goal.shape[1] > 0:
-                        outputs['video_subgoal'] = {
-                            'level': level + 1,
-                            'embed': next_goal[:, :1].detach(),
-                        }
                 level_info['goal_embed_0'] = next_goal
                 if next_action_targets is not None:
                     level_info['goal_action'] = next_action_targets
@@ -839,24 +668,12 @@ class HierarchicalSolver:
                 goal_level = horizon_one_upper_goal_level
                 level_info['goal_embed_0'] = goal_embeddings[f'embed_{goal_level}']
                 level_info['goal_embed_0_level'] = goal_level
-                for component in ('pixel', 'proprio'):
-                    goal_component_key = f'{component}_embed_{goal_level}'
-                    if goal_component_key in goal_embeddings:
-                        level_info[f'goal_{component}_embed_0'] = goal_embeddings[
-                            goal_component_key
-                        ]
                 level_info['goal_embed_0_in_upper_space'] = True
                 level_info['dense_upper_goal_projection'] = True
                 this_level_anchored = True
             else:
                 goal_key = f'embed_{level}'
                 level_info['goal_embed_0'] = goal_embeddings[goal_key]
-                for component in ('pixel', 'proprio'):
-                    goal_component_key = f'{component}_embed_{level}'
-                    if goal_component_key in goal_embeddings:
-                        level_info[f'goal_{component}_embed_0'] = goal_embeddings[
-                            goal_component_key
-                        ]
                 level_info['goal_embed_0_in_upper_space'] = False
                 this_level_anchored = True
 
@@ -865,29 +682,14 @@ class HierarchicalSolver:
             level_info['action_cost_weight'] = float(
                 getattr(level_cfg, 'action_cost_weight', 0.0)
             )
-            level_span = self._level_span(
-                level,
-                steps_taken=steps_taken,
-                eval_budget=eval_budget,
-            )
-            if horizon_schedules is not None:
-                level_schedule = horizon_schedules[level]
-                if call_idx >= len(level_schedule):
-                    raise ValueError(
-                        'Planning call index exceeds resolved horizon schedule: '
-                        f'got call {call_idx} for schedule length '
-                        f'{len(level_schedule)} at level {level}.'
-                    )
-                planning_horizon = level_schedule[call_idx]
-            else:
-                planning_horizon = get_planning_horizon(
-                    configured_horizon=level_solver.horizon,
-                    resolve_horizon=False,
-                    replanning_interval=self._replanning_interval(),
-                    level_span=level_span,
-                    steps_taken=steps_taken,
-                    eval_budget=eval_budget,
+            level_schedule = horizon_schedules[level]
+            if call_idx >= len(level_schedule):
+                raise ValueError(
+                    'Planning call index exceeds resolved horizon schedule: '
+                    f'got call {call_idx} for schedule length '
+                    f'{len(level_schedule)} at level {level}.'
                 )
+            planning_horizon = level_schedule[call_idx]
 
             if level > 1 and planning_horizon == 1:
                 # A one-step upper plan produces no useful subgoal for the lower
@@ -936,73 +738,28 @@ class HierarchicalSolver:
                 planning_horizon=planning_horizon,
                 steps_taken=steps_taken,
                 eval_budget=eval_budget,
-                level_span=level_span,
             )
-            result['planning_horizon'] = planning_horizon
-            outputs[level] = result
             upper_anchored = this_level_anchored
             horizon_one_upper_goal_level = None
             subgoal_latents = result['predictions']['predicted_embed_0']
             subgoal_actions = result.get('actions')
 
-        # return the lowest-level solver's output for compatibility.
-        outputs['actions'] = outputs[1]['actions']
-        outputs['goal_embeddings'] = goal_embeddings
-        return outputs
+        return {'actions': result['actions']}
 
 
 def _build_hierarchical_solver(cfg: Any, model: Any) -> HierarchicalSolver:
-    """Build child solvers outside the hierarchical wrapper (option B)."""
+    """Build one GradientSolver per level from cfg.solver.solvers.levelN."""
     import hydra
 
     level_models = HierarchicalSolver._extract_level_models(model)
-    solver_cfgs = cfg.solver.get('solvers', None)
-
-    if solver_cfgs is None:
-        raise ValueError("Hierarchical solver config must define 'solvers'.")
-
-    if isinstance(solver_cfgs, Mapping):
-        keyed_cfgs: dict[int, Any] = {}
-        for key, value in solver_cfgs.items():
-            if not str(key).startswith('level'):
-                raise ValueError(
-                    "When 'solvers' is a mapping, keys must be 'level1', 'level2', ..."
-                )
-
-            level_suffix = str(key)[len('level') :]
-            if not level_suffix.isdigit():
-                raise ValueError(
-                    f"Invalid solver level key '{key}'. Expected keys like 'level1'."
-                )
-
-            keyed_cfgs[int(level_suffix)] = value
-
-        expected_levels = set(range(1, len(level_models) + 1))
-        got_levels = set(keyed_cfgs.keys())
-        if got_levels != expected_levels:
-            raise ValueError(
-                "When 'solvers' is a mapping, keys must match model levels: "
-                f"expected {sorted(expected_levels)}, got {sorted(got_levels)}."
-            )
-
-        solver_cfgs = [keyed_cfgs[level] for level in sorted(keyed_cfgs)]
-
-    if len(solver_cfgs) != len(level_models):
-        raise ValueError(
-            'Number of child solver configs must match hierarchy levels: '
-            f'got {len(solver_cfgs)} configs for {len(level_models)} levels.'
-        )
-
     level_solvers = {}
-    for level, (solver_cfg, level_model) in enumerate(
-        zip(solver_cfgs, level_models, strict=True), start=1
-    ):
+    for level, level_model in enumerate(level_models, start=1):
         adapted_model = _HierarchicalLevelModel(
             model=level_model,
             upper_models=level_models[level:],
         )
         level_solvers[level] = hydra.utils.instantiate(
-            solver_cfg, model=adapted_model
+            cfg.solver.solvers[f'level{level}'], model=adapted_model
         )
 
     return HierarchicalSolver(level_solvers=level_solvers, model=model)

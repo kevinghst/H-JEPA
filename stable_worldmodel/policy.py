@@ -1,7 +1,6 @@
 from collections import deque
 from dataclasses import dataclass
 import importlib
-import inspect
 from pathlib import Path
 import sys
 from typing import Any, Protocol
@@ -14,8 +13,6 @@ from torchvision import tv_tensors
 
 import stable_worldmodel as swm
 from stable_worldmodel.solver import Solver
-
-VALID_LAST_INDEX_KEY = '_valid_last_index'
 
 
 def _register_legacy_checkpoint_module_aliases() -> None:
@@ -45,12 +42,11 @@ class PlanConfig:
     """Configuration for the MPC planning loop.
 
     Attributes:
-        horizon: Planning horizon or per-call planning-horizon schedule.
+        horizon: Planning horizon; each call uses a decreasing schedule derived
+            from it and the eval budget.
         receding_horizon: Number of steps to execute before re-planning.
-        history_len: Number of past observations to consider.
         action_block: Number of times each action is repeated (frameskip).
         action_dim: Optional explicit per-step action dimension used by solvers.
-        resolve_horizon: Whether to derive a per-call horizon schedule.
         pre_decay_horizon: Optional lower-level horizon used before its
             resolved decay segment starts in hierarchical planning.
         horizon_one_goal_cost_space: For skipped upper levels with horizon 1,
@@ -58,15 +54,13 @@ class PlanConfig:
             'upper' projects lower predictions to the actual upper-level goal.
     """
 
-    horizon: int | list[int]
+    horizon: int
     receding_horizon: int
-    history_len: int = 1
     action_block: int = 1
     action_dim: int | None = None
-    resolve_horizon: bool = False
     pre_decay_horizon: int | None = None
     num_subgoals: int = 1
-    cost_last_n: int | list[int] = 1
+    cost_last_n: int = 1
     intermediate_cost_weight: float = 1.0
     action_cost_weight: float = 0.0
     horizon_one_goal_cost_space: str = 'lower'
@@ -78,15 +72,11 @@ class HierarchicalPlanConfig:
 
     Attributes:
         receding_horizon: Number of high-level steps to execute before re-planning.
-        history_len: Number of past observations to consider.
-        resolve_horizon: Whether to derive per-level horizon schedules.
         levels: Per-level planning configs, ordered from level 1 upward. Also
             exposed as ``level1``, ``level2``, ... attributes.
     """
 
     receding_horizon: int
-    history_len: int = 1
-    resolve_horizon: bool = False
     levels: tuple[PlanConfig, ...] = ()
 
     def __getattr__(self, name: str) -> PlanConfig:
@@ -121,14 +111,6 @@ class Transformable(Protocol):
         Returns:
             Original data as a numpy array.
         """
-        ...
-
-
-class Actionable(Protocol):
-    """Protocol for model action computation."""
-
-    def get_action(info) -> torch.Tensor:  # pragma: no cover
-        """Compute action from observation and goal"""
         ...
 
 
@@ -345,35 +327,6 @@ class RandomPolicy(BasePolicy):
             self.env.action_space.seed(seed)
 
 
-class ExpertPolicy(BasePolicy):
-    """Policy using expert demonstrations or heuristics."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize the expert policy.
-
-        Args:
-            **kwargs: Additional configuration parameters.
-        """
-        super().__init__(**kwargs)
-        self.type = 'expert'
-
-    def get_action(
-        self, obs: Any, goal_obs: Any, **kwargs: Any
-    ) -> np.ndarray | None:
-        """Get action from the expert policy.
-
-        Args:
-            obs: The current observation.
-            goal_obs: The goal observation.
-            **kwargs: Additional parameters.
-
-        Returns:
-            The expert action, or None if not available.
-        """
-        # Implement expert policy logic here
-        pass
-
-
 class WorldModelPolicy(BasePolicy):
     """Policy using a world model and planning solver for action selection."""
 
@@ -400,9 +353,6 @@ class WorldModelPolicy(BasePolicy):
         self.type = 'world_model'
         self.cfg = config
         self.solver = solver
-        self.action_buffer: deque[torch.Tensor] = deque(
-            maxlen=self.flatten_receding_horizon
-        )
         self.process = process or {}
         self.transform = transform or {}
         self._action_buffer: deque[torch.Tensor] | None = None
@@ -458,11 +408,6 @@ class WorldModelPolicy(BasePolicy):
             return None
         return max(0, self.eval_budget - self._steps_taken)
 
-    def _solver_supports_budget_args(self) -> bool:
-        """Return whether the solver accepts eval-budget planning kwargs."""
-        params = inspect.signature(self.solver.solve).parameters
-        return 'steps_taken' in params and 'eval_budget' in params
-
     def get_action(self, info_dict: dict, **kwargs: Any) -> np.ndarray:
         """Get action via planning with the world model.
 
@@ -485,18 +430,14 @@ class WorldModelPolicy(BasePolicy):
             if remaining_steps is not None and remaining_steps <= 0:
                 raise RuntimeError('Evaluation step budget exhausted.')
 
-            solve_kwargs = {'init_action': None}
-            if self._solver_supports_budget_args():
-                solve_kwargs.update(
-                    {
-                        'steps_taken': self._steps_taken,
-                        'eval_budget': self.eval_budget,
-                    }
-                )
-
             self._policy_call_count += 1
             print(f'policy call number: {self._policy_call_count}')
-            outputs = self.solver(info_dict, **solve_kwargs)
+            outputs = self.solver(
+                info_dict,
+                init_action=None,
+                steps_taken=self._steps_taken,
+                eval_budget=self.eval_budget,
+            )
 
             actions = outputs['actions']  # (num_envs, horizon, action_dim)
             keep_horizon = min(self.cfg.receding_horizon, actions.shape[1])
