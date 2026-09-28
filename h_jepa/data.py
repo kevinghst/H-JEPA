@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import h5py
 import numpy as np
 from omegaconf import OmegaConf
 import stable_worldmodel as swm
@@ -294,53 +293,6 @@ def _select_episodes_for_transition_budget(
         chosen.append(int(shuffled[0]))
 
     return np.asarray(sorted(chosen), dtype=np.int64)
-
-
-def get_img_preprocessor(source: str, target: str, img_size: int = 224):
-    imagenet_stats = dt.dataset_stats.ImageNet
-    to_image = dt.transforms.ToImage(**imagenet_stats, source=source, target=target)
-    resize = dt.transforms.Resize(img_size, source=source, target=target)
-    return dt.transforms.Compose(to_image, resize)
-
-
-def get_hdf5_image_shape(dataset, col: str) -> tuple[int, int, int] | None:
-    """Return raw HDF5 image shape as (H, W, C), when it can be inspected cheaply."""
-    if hasattr(dataset, "datasets"):
-        shapes = [get_hdf5_image_shape(child, col) for child in dataset.datasets]
-        first_shape = shapes[0] if shapes else None
-        if first_shape is not None and all(shape == first_shape for shape in shapes):
-            return first_shape
-        return None
-
-    h5_path = getattr(dataset, "h5_path", None)
-    if h5_path is None:
-        return None
-
-    with h5py.File(h5_path, "r") as f:
-        if col not in f:
-            return None
-        shape = f[col].shape
-
-    if len(shape) < 4:
-        return None
-
-    image_shape = tuple(int(dim) for dim in shape[-3:])
-    if image_shape[-1] in (1, 3):
-        return image_shape
-    if image_shape[0] in (1, 3):
-        channels, height, width = image_shape
-        return height, width, channels
-    return None
-
-
-def image_shape_matches_size(
-    image_shape: tuple[int, int, int] | None,
-    img_size: int,
-) -> bool:
-    if image_shape is None:
-        return False
-    height, width, channels = image_shape
-    return height == int(img_size) and width == int(img_size) and channels == 3
 
 
 def get_column_normalizer(dataset, source: str, target: str):

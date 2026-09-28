@@ -142,6 +142,17 @@ Round 4
   top-level `num_workers`, `probe_targets`, Ant's `visualization` block. Kept: the `output_dir`
   override (the debug-run skill uses it) and `_dataset_col_variance`'s fallback for datasets
   without `get_col_stats` (only the Ant mixture has it; the audit wrongly listed it as dead).
+- probing outputs: probe metrics are now macro NMSE (mean over target dims of MSE_d / Var_d, the
+  number the depth-probes figure plots), computed in the one train/eval pass (`_run_epoch`) and
+  written to `metrics.yaml` as `levelN_probe_<col>_nmse` (`eval_mean/` = mean over eval sets). Gone:
+  the second eval pass (`_evaluate_probe_dim_metrics`), the pooled NMSE, `probe_dim_metrics.csv`,
+  `probe_summary_metrics.csv`, the floor columns and their W&B keys, `heads.ckpt`, `manifest.yaml`,
+  `eval_metrics.yaml`, `eval_metrics_history.yaml`, `policy_train_config.yaml`, CPU image resizing
+  (stored images always match `img_size`) and the upper-level fusion branch of the dense encode.
+  Output dir: `config.yaml`, `metrics.yaml`, `decoder_levelN.ckpt`, `decodings/`. Checked on seeded
+  Cube/Ant/FourRoom runs: new NMSE = old summary-CSV macro NMSE (1e-16), losses, decoders and
+  decodings bit-identical. The dev figure pipeline (`depth_family.py`) reads the summary CSV and
+  would need to read `metrics.yaml` instead.
 
 ## Kept on purpose
 
@@ -173,78 +184,33 @@ From the round-4 audit (2026-09-28). [x] = agreed to remove; [ ] = candidate, no
 Decided to keep: probing/decoding as a whole; standalone `main_probing_decoding_eval.py` training
 probes only (no decoders: the `levelN.train_decoder` overrides live in the training configs) is fine.
 
-### Safe dead code: envs
-- [ ] `envs/ogbench/expert_policy.py` (manipulation oracle) and `envs/pusht/expert_policy.py`
-  (WeakPolicy): only re-exported.
-- [ ] HumanoidMaze: `humanoidmaze_env.py`, `HumanoidMazeExplorePolicy`, its `ENV_SPECS` entry in
-  `generate_maze_expert_grid_eval_tasks.py` (not registered, cannot be built).
-- [ ] `cube_env.py`: double/triple/quadruple/octuple tasks (~400 lines), `data_collection` mode,
+Filtered to items that remove more than ~100 lines (sizes are approximate).
+
+### Envs
+- [ ] `envs/ogbench/expert_policy.py` (manipulation oracle, 287) and `envs/pusht/expert_policy.py`
+  (WeakPolicy, 86): only re-exported.
+- [ ] `cube_env.py` (~500): double/triple/quadruple/octuple tasks (~400), `data_collection` mode,
   multiview render, ob_type `pixels` branch.
-- [ ] `pusht/env.py`: unused shapes (L, Z, square, I, small_tee, plus, box), `human` render mode,
-  never-passed constructor args (`render_action`, `block_cog`, `damping`, `with_target`,
-  `init_value`, `relative`), dead attributes.
-- [ ] `four_room/env.py`: `expert` / `expert_explore` / `static` distractor policies,
+- [ ] `pusht/env.py` (~300): unused shapes (L, Z, square, I, small_tee, plus, box; ~230), `human`
+  render mode, never-passed constructor args, dead attributes.
+- [ ] `four_room/env.py` (~150+): `expert` / `expert_explore` / `static` distractor policies,
   `distractor_action_noise`, periodic `teleport_mode`, `target_min_steps`, `render_target`,
   `set_distractor_policy`, `init_value`.
-- [ ] `four_room/explore_policy.py`: `random` mixture entry and `ratio` alias.
-- [ ] `locomaze_env.py` / `antmaze_policy.py`: `neutral_info_from_xy`, `ogbench_impls_path`,
-  Humanoid-only `policy_prefix` / `env_label`; `navigate` dataset_type (medium).
-- [ ] `envs/utils.py`: `get_mouse_pos`, `from_pygame`, `DrawOptions.draw_dot`, `pymunk_to_shapely`
-  (drops `shapely`); `perturb_camera_angle` goes with the cube camera variation.
-- [ ] `stable_worldmodel/utils.py`: `flatten_dict`, `record_video_from_dataset`, `pretraining`.
-- [ ] `wrapper.py`: `EnsureImageShape`, `EnsureGoalInfoWrapper`, `VariationWrapper` non-`same` modes,
-  `MegaWrapper(separate_goal)`.
-- [ ] `spaces.py`: minor dead branches (`set_init_value`, Dict fallbacks); low value.
+- [ ] `wrapper.py` (~130): `EnsureImageShape` (57), `EnsureGoalInfoWrapper` (57), `VariationWrapper`
+  non-`same` modes.
 
-### Safe dead code: planning
-- [ ] `World.evaluate`.
-- [ ] `num_subgoals` > 1 in hierarchical planning (1 everywhere).
-- [x] `policy.py`: fold `AutoCostModel` / `_load_model_with_attribute` into the hierarchical load
-  path (medium).
+### Planning
+- [ ] `World.evaluate` (151).
 
-### Safe dead code: training and models
-- [x] `main_hjepa.py`: `rand_str` run id (medium).
-- [x] `models/module.py`: plain `Block` / `c is None` path and 4-D `Embedder` input (medium).
-- [x] `data.py`: defensive checks (medium).
-- [x] `utils.py`: per-epoch `*_epoch_N_object.ckpt` dumps (medium).
-- [x] `hjepa_forward` no-grad logging extras (`mse`, `l1`, `dim_mean/std/min/max`) (medium).
-
-### Safe dead code: probing (probing itself is kept)
-- [ ] Per-dimension / summary CSVs and their logging, `manifest.yaml`, `eval_metrics_history.yaml`,
-  `heads.ckpt` (duplicates `decoder_levelN.ckpt`), `policy_train_config.yaml`.
-
-### Safe dead code: scripts
-- [ ] `load_eval_config` `config_path` branch: only the generators' `--config-path` flags still pass
-  it (moved here from the planning section).
-- [ ] `generate_dataset_eval_trajs.py`: `random` and `_lift` modes, upright/moving filters (9 flags
-  incl. legacy aliases), videos, `--max-attempts`, `--pickup-height-delta`, `--config-path`,
-  positional overrides, `--num-episodes`. Check the output stays bit-identical.
-- [ ] `generate_maze_expert_grid_eval_tasks.py`: `--goal-cell-set vertex`, `--dataset-name`,
-  `--policy-dataset-type navigate`, `--policy-noise`, `--min/max-steps`, `--max-attempts`, videos,
-  `--config-path`, `cfg.policy`-as-config branch; `_apply_configured_merges` (medium, check first).
-- [ ] `generate_fourroom_eval_tasks.py`: videos, render sanity check, `--max-attempts`, `--max-steps`
-  None branches, `--cross-n-rooms 3`, `_base_options`, multi-root config search; writing only `_d1`
-  (medium); fold `fourroom_tp35_d0to5.yaml` into `d1.yaml` (medium).
-- [ ] `scripts/data/convert_pusht_noise_to_h5.py` (unreferenced). Keep `fourroom_distractor_distance.py`.
-- [ ] `collect_fourroom_distractors.py`: `num_traj` branch, `fixed_length_episodes: false` branch,
-  `_is_set` assert, positivity checks.
+### Scripts
+- [ ] `generate_dataset_eval_trajs.py` (~400): `random` and `_lift` modes, upright/moving filters
+  (9 flags incl. legacy aliases), videos, `--max-attempts`, `--pickup-height-delta`,
+  `--config-path`, positional overrides, `--num-episodes`. Check the output stays bit-identical.
+- [ ] `generate_maze_expert_grid_eval_tasks.py` (~150): HumanoidMaze, `--goal-cell-set vertex`,
+  `--dataset-name`, `--policy-dataset-type navigate`, `--policy-noise`, `--min/max-steps`,
+  `--max-attempts`, videos, `--config-path`, `cfg.policy`-as-config branch.
 
 ### Needs a bit-exact check (changes seeding order or reset code)
 - [ ] Cube / Push-T variation sub-spaces no config uses (colors, sizes, camera, light, shape spaces)
-  and the matching `modify_mjcf_model` code.
-- [ ] `PointMazeEnv` visual-variation machinery (fold the rest into `LocomazeEnv`).
-- [ ] `options['state']` reset paths in Cube and Push-T.
-- [ ] In-training `OnlineProbe` callbacks (probe init consumes the global torch RNG).
-
-### Dependencies (`pyproject.toml`)
-- [ ] Never imported: `tabulate`, `gdown`, `typer`, `minigrid`, `stable_baselines3`,
-  `hydra-submitit-launcher` (+ `shapely` after the helper goes).
-- [ ] Dev-only: `decord`, `mkdocs*`, `twine`, `pytest-cov`.
-
-### Open (your call)
-- [ ] Keep `planning_compute.json` + `_collect_solve_records` / `solve_records` (lets the
-  "<100 TFLOPs" claim be checked) and `evaluation_time`?
-- [ ] Other diagnostic planning outputs: `seeds`, `wall_clock_to_success`,
-  `loaded_eval_original_lengths`, `steps_to_success[_success_only]`.
-- [ ] Merge `FourRoomEnv` into `FourRoomDistractorsEnv` (cosmetic).
-
+  and the matching `modify_mjcf_model` code (>100).
+- [ ] `PointMazeEnv` visual-variation machinery (~300; fold the rest into `LocomazeEnv`).
