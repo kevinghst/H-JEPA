@@ -12,7 +12,7 @@ The code builds on [LeWM](https://github.com/lucas-maes/le-wm) and
 [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel), which is vendored in
 `stable_worldmodel/` with the environments, solvers and planning policy used here.
 
-## Layout
+## 1) Layout
 
 ```
 stable_worldmodel/          environments, dataset loader, planning solvers and policy
@@ -43,7 +43,7 @@ h_jepa/
 | `l2`, `l3`, `l4` | 2/3/4-level hierarchical planning, shared by H-JEPA and HWM |
 | `l2_project`, `l3_project`, `l4_project` | level-1 planning with the cost in the level-2/3/4 latent |
 
-## Installation
+## 2) Installation
 
 ```bash
 git clone https://github.com/kevinghst/H-JEPA.git && cd H-JEPA
@@ -52,9 +52,11 @@ pip install -e ".[train,env]"
 export STABLEWM_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
 ```
 
-All commands below run from `h_jepa/` unless noted.
+## 3) Usage
 
-## Datasets
+How to run each part of the pipeline. All commands run from `h_jepa/` unless noted.
+
+### 3.1) Datasets
 
 All datasets are HDF5 files under `$STABLEWM_HOME`.
 
@@ -98,7 +100,7 @@ done
 Each config under `scripts/data/config/` is the collection config saved next to the dataset used in
 the paper.
 
-## Evaluation tasks
+### 3.2) Generate evaluation tasks
 
 Each environment has a fixed set of 50 start/goal tasks under `h_jepa/assets/eval_trajs/`.
 Download them (`<LINK: eval tasks>`) or regenerate them:
@@ -127,13 +129,13 @@ python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null 
   dump_eval_trajs_path=assets/eval_trajs/pusht/goal_offset_75_val.pt
 ```
 
-## Training
+### 3.3) Training
 
 ```bash
 python main_hjepa.py --config-name <env>_<model> seed=<seed>
 ```
 
-The paper uses seeds 42, 43 and 44. A run writes to `$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/`:
+A run writes to `$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/`:
 
 - `<env>_<model>_object.ckpt`: the trained model;
 - `planning_eval/epoch_XXXX/metrics.yaml`: the planning eval run at the end of training with the
@@ -141,24 +143,67 @@ The paper uses seeds 42, 43 and 44. A run writes to `$STABLEWM_HOME/ckpts/<env>_
 - `final_probing_decoding_eval/`: probes and decoders trained on the frozen model
   (`config/probing/<env>.yaml`).
 
-`scripts/train_all.sh` trains all 84 runs sequentially (restrict with `ENVS`, `MODELS`, `SEEDS`); on a
-cluster, submit each command as its own job. W&B logging is off by default (`wandb.enabled=true` to turn
-it on).
+W&B logging is off by default (`wandb.enabled=true` to turn it on).
 
-## Planning: depth figure
+### 3.4) Probing and decoding
 
-The planning eval at the end of training already produces these numbers. To re-run it from saved
-checkpoints:
+Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoint:
 
 ```bash
-python eval.py --config-name <env>_<planner> seed=<seed> output.dir=eval_<planner> \
+python main_probing_decoding_eval.py --config-name <env> \
   policy=$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
 ```
 
-with `flat` for `lewm` and `l<n>` for `hjepa_l<n>` and `hwm_l<n>`. `scripts/eval_depth.sh` runs all of
-them. Each eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
+### 3.5) Planning evaluation
 
-Reference success rates (%, mean ± SE over three seeds):
+To run a planner on a saved checkpoint:
+
+```bash
+python eval.py --config-name <env>_<planner> seed=<seed> output.dir=<dir> \
+  policy=$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+```
+
+The eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
+Use `flat` for `lewm` and `l<n>` for `hjepa_l<n>` and `hwm_l<n>`. The `l<k>_project` planners run
+level-1 planning with the cost measured in the level-k latent (the upper levels are skipped; the planned
+level-1 states and the goal are encoded up to level k); they apply to any H-JEPA model with at least k
+levels, since planning levels above the model's depth are dropped.
+
+## 4) Reproducing Fourroom, Visual AntMaze, OGBench Cube, Push-T
+
+This covers the bottom row of the depth figure and the level-1 columns of the cost-ladder tables. The
+paper uses seeds 42, 43 and 44 for every model, with the planner seed equal to the model seed. Reference
+numbers are success rates (%, mean ± SE over the three seeds).
+
+### 4.1) Training
+
+Train all 4 environments × 7 models × 3 seeds (84 runs):
+
+```bash
+scripts/train_all.sh
+```
+
+The runs are sequential; restrict them with `ENVS`, `MODELS` and `SEEDS` (e.g.
+`ENVS=cube MODELS="lewm hjepa_l3" SEEDS=42 scripts/train_all.sh`), or on a cluster submit each
+`main_hjepa.py` command as its own job.
+
+### 4.2) Depth figure
+
+Each training run ends with the planning eval behind the depth figure (flat planning
+for LeWM, n-level planning for H-JEPA and HWM with n levels), so the numbers come out as a byproduct of
+training:
+
+```
+$STABLEWM_HOME/ckpts/
+  <env>_<model>/                    <env> in {ant, fourroom, cube, pusht}
+    seed<seed>/                     <model> in {lewm, hjepa_l2..4, hwm_l2..4}, <seed> in {42, 43, 44}
+      <env>_<model>_object.ckpt
+      planning_eval/epoch_XXXX/metrics.yaml    success_rate
+      final_probing_decoding_eval/
+```
+
+`scripts/eval_depth.sh` re-runs the same evals from the saved checkpoints and writes
+`<env>_<model>/seed<seed>/eval_<planner>/metrics.yaml`.
 
 | | LeWM | H-JEPA 2 | H-JEPA 3 | H-JEPA 4 | HWM 2 | HWM 3 | HWM 4 |
 |---|---|---|---|---|---|---|---|
@@ -172,21 +217,26 @@ sample counts per level. Cube's 3- and 4-level planners keep the levels above 2 
 levels are skipped (2-level planning of a deeper model). No four-level compute sweep was run on Push-T,
 so `pusht_l4` keeps the original planner setting.
 
-## Planning: cost ladder
+### 4.3) Cost ladder
 
-The H-JEPA level-1 planner with its cost measured in the latent of level 2, 3 or 4 (the upper levels
-are skipped; the planned level-1 states and the goal are encoded up to the target level):
+Evaluate every H-JEPA model with the flat level-1 planner (the native column) and
+with the cost measured in each upper level's latent (`l2_project` … `l<n>_project` for an n-level model):
 
 ```bash
-python eval.py --config-name <env>_l<k>_project seed=<seed> output.dir=eval_l<k>_project \
-  policy=$STABLEWM_HOME/ckpts/<env>_hjepa_l<n>/seed<seed>/<env>_hjepa_l<n>_object.ckpt
+scripts/eval_cost_ladder.sh
 ```
 
-for every n-level H-JEPA model and 2 ≤ k ≤ n. The same config serves 2-, 3- and 4-level models: planning
-levels above the model's depth are dropped. The native level-1 column is `<env>_flat` on the same model.
-`scripts/eval_cost_ladder.sh` runs everything, including the native column.
+`ENVS` and `SEEDS` restrict it as above. Each eval writes next to the checkpoint:
 
-Reference success rates (%, mean ± SE over three seeds):
+```
+$STABLEWM_HOME/ckpts/
+  <env>_hjepa_l<n>/                 <n> in {2, 3, 4}
+    seed<seed>/
+      eval_flat/metrics.yaml        native L1
+      eval_l2_project/metrics.yaml  L2 cost
+      eval_l3_project/metrics.yaml  L3 cost (n >= 3)
+      eval_l4_project/metrics.yaml  L4 cost (n = 4)
+```
 
 | | Model | Native L1 | L2 cost | L3 cost | L4 cost |
 |---|---|---|---|---|---|
@@ -203,15 +253,6 @@ Reference success rates (%, mean ± SE over three seeds):
 | | 3 levels | 30.7 ± 1.8 | 28.0 ± 4.0 | 24.7 ± 4.1 | |
 | | 4 levels | 1.3 ± 0.7 | 1.3 ± 0.7 | 0.7 ± 0.7 | 1.3 ± 1.3 |
 
-## Probing and decoding
-
-Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoint:
-
-```bash
-python main_probing_decoding_eval.py --config-name <env> \
-  policy=$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
-```
-
-## License
+## 5) License
 
 MIT (see `LICENSE`).
