@@ -8,8 +8,8 @@ data:
     camera_views:
     - left_mp4_path
     - right_mp4_path
-    fps: 20
-    norm_stats: full_fps20
+    fps: 5
+    norm_stats: full_fps5
     keys_to_load:
     - pixels
     - action

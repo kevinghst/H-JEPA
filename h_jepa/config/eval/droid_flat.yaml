@@ -1,8 +1,8 @@
 # DROID: flat level-1 planning, read by droid_plan_eval.py (offline, open-loop).
-# One planning call per clip plans the whole 36-step goal window (fps20) and is scored
+# One planning call per clip plans the whole 36-step goal window (5 fps) and is scored
 # on the endpoint only.
 seed: 1234
-clips: droid_assets/droid_clips_waypoint_curated16v2_20fps_gw36.json
+clips: droid_assets/droid_clips_waypoint_curated16v2_5fps_gw36.json
 img_size: 256
 eval_budget: 36
 solver:

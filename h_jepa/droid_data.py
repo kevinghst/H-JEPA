@@ -123,7 +123,8 @@ class DROIDClipReader(torch.utils.data.Dataset):
             raise FileNotFoundError(f"Video file missing: {vpath}")
         vr = decord.VideoReader(vpath, ctx=decord.cpu(0), num_threads=1)
         vlen = len(vr)
-        fstp = ceil(vr.get_avg_fps() / self.fps)
+        # DROID mp4s are tagged at 4x their 15 Hz recording rate (60 fps).
+        fstp = ceil(vr.get_avg_fps() / (4 * self.fps))
         nframes = self.num_frames * fstp
 
         if frozen is not None:

@@ -1,4 +1,4 @@
-"""Offline DROID planning eval on the 16 curated waypoint clips (fps20, goal window 36).
+"""Offline DROID planning eval on the 16 curated waypoint clips (5 fps, goal window 36).
 
 Each clip is planned start -> goal in one open-loop call and scored against the
 ground-truth actions:
@@ -157,7 +157,7 @@ def main() -> None:
     p.add_argument("--ckpt", required=True, help="<run>_object.ckpt")
     p.add_argument("--config", default="droid_flat", help="Eval config in config/eval/")
     p.add_argument("--out", default=None, help="Base output dir (default: the ckpt dir)")
-    p.add_argument("--tag", default="wp_20fps_gw36_cur16v2", help="Output subfolder")
+    p.add_argument("--tag", default="wp_5fps_gw36_cur16v2", help="Output subfolder")
     p.add_argument("--start-index", type=int, default=0, help="First manifest clip")
     p.add_argument("--num-eval", type=int, default=None, help="Clips from --start-index")
     p.add_argument("--seed", type=int, default=None, help="Planner seed (default: yaml)")

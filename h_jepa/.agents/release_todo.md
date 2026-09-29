@@ -111,6 +111,10 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   (only the last ~1 % of the schedule; matters for flat's e-100 = end of schedule); (ii) level-2 IDM raw loss drifts ~10-13 %
   BELOW eb after ~24k steps in both ports (pulls total loss ~5 % low). Neither explains the H-JEPA fidelity gap (34 vs 40 on
   one train seed); seeds 1000/10000 decide.
+- 2026-09-29 DROID rate renamed to its true 5 fps: `data.fps: 5` (the loader strides by `ceil(tag / (4 fps))`,
+  DROID mp4s being tagged 60 fps for 15 Hz footage), norm-stats key `full_fps5`, manifest
+  `droid_clips_waypoint_curated16v2_5fps_gw36.json`, default tag `wp_5fps_gw36_cur16v2`. Data gate vs the reference
+  (fps 20 / `full_fps20`) 42/42 equal, e2e plan-eval eval.csv byte-identical (flat, hier).
 
 ## Removed features
 

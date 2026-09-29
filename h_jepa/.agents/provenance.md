@@ -103,9 +103,10 @@ The DROID models were trained with the eb_jepa code (`amilabs/research/eb_jepa`)
 | `droid_hjepa_l2` | `h_ac_video_jepa/droid_256p/sweep_e2e2lvl_cls_fps20_L1idm100_lvl2idm50_sigr0p16_noDetPT_3seed_2gpu_2026-09-14_02-07` | e-100 of 150 |
 
 - Data: `droid_paths_minus16_256p.csv` (74,896 episodes) for training, `droid_val_indist_256p.csv` for
-  monitoring. Assets in `h_jepa/droid_assets/`: norm stats `full_fps20`, clip manifest
-  `droid_clips_waypoint_curated16v2_20fps_gw36.json` (16 clips x 37 frames, horizon 36).
-- `data.fps: 20` is a decode stride on 60-fps-tagged containers of 15 Hz footage: 5 fps true.
+  monitoring. Assets in `h_jepa/droid_assets/`: norm stats `full_fps5`, clip manifest
+  `droid_clips_waypoint_curated16v2_5fps_gw36.json` (16 clips x 37 frames, horizon 36).
+- 5 fps (`data.fps: 5`): DROID mp4s are tagged 60 fps for 15 Hz footage, so the stride is 3 frames.
+  `fps20` / `20fps` in the eb_jepa run and cell names of this section is the old name of this same 5 fps rate.
 
 ### Planning configs (`config/eval/droid_{flat,l2}.yaml`)
 

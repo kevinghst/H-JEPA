@@ -4,7 +4,7 @@
 # the intermediate ones). Defaults are the H-JEPA cell; HWM: --lr 0.01 0.1
 # --num-samples 16.
 seed: 1234
-clips: droid_assets/droid_clips_waypoint_curated16v2_20fps_gw36.json
+clips: droid_assets/droid_clips_waypoint_curated16v2_5fps_gw36.json
 img_size: 256
 eval_budget: 36
 solver:

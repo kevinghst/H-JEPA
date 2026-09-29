@@ -277,12 +277,12 @@ validation split used for monitoring. Both CSVs list episode directories by abso
 with `data.dataset.name` and `data.dataset.val_name` (`config/train/base/droid.yaml`).
 
 `h_jepa/droid_assets/` holds the action/proprio normalization stats (`norm_stats_droid.json`, key
-`full_fps20`) and the evaluation-clip manifest `droid_clips_waypoint_curated16v2_20fps_gw36.json`
+`full_fps5`) and the evaluation-clip manifest `droid_clips_waypoint_curated16v2_5fps_gw36.json`
 (16 clips of 37 frames, goal 36 steps after the start), which reads the clips from the raw DROID
 1.0.1 release.
 
-`data.fps: 20` (and `20fps` in the asset names) is the decode rate on mp4 containers tagged 60 fps
-that hold 15 Hz footage: the models see 5 fps.
+The models run at 5 fps (`data.fps: 5`, one step = 0.2 s). DROID mp4s are tagged 60 fps but hold
+15 Hz footage, so the loader keeps every 3rd frame.
 
 ### 5.2) Training
 
