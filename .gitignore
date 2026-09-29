@@ -19,3 +19,6 @@ h_jepa/logs/
 # local environment dumps
 environment*.json
 requirements_frozen*.txt
+
+# per-user cluster settings for h_jepa/launch.py
+h_jepa/config/slurm/local.yaml
