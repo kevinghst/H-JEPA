@@ -3,11 +3,34 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 import stable_worldmodel as swm
-from stable_pretraining import data as dt
 import torch
 
 
 NORMALIZER_ARTIFACT_FILENAME = "normalizer.pt"
+IMAGENET_STATS = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+
+class ColumnTransform:
+    """Apply `fn` to `sample[source]` and store the result in `sample[target]`."""
+
+    def __init__(self, fn, source: str, target: str):
+        self.fn, self.source, self.target = fn, source, target
+
+    def __call__(self, sample: dict) -> dict:
+        sample[self.target] = self.fn(sample[self.source])
+        return sample
+
+
+class Compose:
+    """Apply dict-sample transforms in sequence."""
+
+    def __init__(self, *transforms):
+        self.transforms = transforms
+
+    def __call__(self, sample: dict) -> dict:
+        for t in self.transforms:
+            sample = t(sample)
+        return sample
 
 
 def build_hdf5_dataset(dataset_cfg, cache_dir=None):
@@ -94,7 +117,7 @@ def get_column_normalizer(dataset, source: str, target: str):
         x = (x - mean) / std
         return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0).float()
 
-    normalizer = dt.transforms.WrapTorchTransform(norm_fn, source=source, target=target)
+    normalizer = ColumnTransform(norm_fn, source=source, target=target)
 
     return normalizer
 
@@ -125,7 +148,7 @@ def get_column_normalizer_from_artifact(
             x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         return x.float()
 
-    return dt.transforms.WrapTorchTransform(norm_fn, source=source, target=target)
+    return ColumnTransform(norm_fn, source=source, target=target)
 
 
 def normalizer_columns_from_dataset_cfg(dataset_cfg) -> list[str]:

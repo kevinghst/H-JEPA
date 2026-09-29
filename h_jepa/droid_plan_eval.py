@@ -33,13 +33,12 @@ from pathlib import Path
 import gymnasium
 import hydra
 import numpy as np
-import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
 from omegaconf import OmegaConf
 from torchvision.transforms import v2 as transforms
 
-from data import NORMALIZER_ARTIFACT_FILENAME, load_normalizer_artifact
+from data import IMAGENET_STATS, NORMALIZER_ARTIFACT_FILENAME, load_normalizer_artifact
 from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
 from stable_worldmodel.solver.hierarchical_solver import build_hierarchical_solver
 from traj_metrics import cumulative_delta, frechet_skill_over_floor
@@ -102,7 +101,7 @@ def img_transform(img_size: int) -> transforms.Compose:
             transforms.ToDtype(torch.float32, scale=True),
             transforms.Lambda(_center_square_crop),
             transforms.Resize(size=[img_size, img_size], antialias=False),
-            transforms.Normalize(**spt.data.dataset_stats.ImageNet),
+            transforms.Normalize(**IMAGENET_STATS),
         ]
     )
 

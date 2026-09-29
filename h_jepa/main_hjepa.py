@@ -28,6 +28,7 @@ from utils import (
 )
 from final_probing_decoding_eval import FinalProbingDecodingEvalCallback
 from data import (
+    Compose,
     build_normalizer_artifact,
     build_hdf5_dataset,
     get_column_normalizer,
@@ -182,7 +183,7 @@ def run(cfg):
         for col in cfg.data.dataset.keys_to_load
         if not col.startswith("pixels")
     ]
-    transform = spt.data.transforms.Compose(*extra_transforms)
+    transform = Compose(*extra_transforms)
     train_dataset.transform = transform
     val_dataset.transform = transform
 

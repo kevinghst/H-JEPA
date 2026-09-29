@@ -8,7 +8,6 @@ from pathlib import Path
 
 import hydra
 import numpy as np
-import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -17,6 +16,7 @@ from sklearn import preprocessing
 from torchvision.transforms import v2 as transforms
 
 from data import (
+    IMAGENET_STATS,
     NORMALIZER_ARTIFACT_FILENAME,
     load_normalizer_artifact,
 )
@@ -30,7 +30,7 @@ def img_transform(cfg):
         [
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
-            transforms.Normalize(**spt.data.dataset_stats.ImageNet),
+            transforms.Normalize(**IMAGENET_STATS),
             transforms.Resize(size=cfg.eval.img_size),
         ]
     )
