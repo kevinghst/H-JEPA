@@ -15,9 +15,6 @@ data:
       num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
 trainer:
   max_epochs: 100
-  devices: 2
-loader:
-  batch_size: 128
 level1:
   wm:
     nsteps: 1

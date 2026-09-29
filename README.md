@@ -294,13 +294,13 @@ scripts/train_droid.sh
 
 | Config | Model | GPUs × batch | Epochs |
 |---|---|---|---|
-| `droid_lewm` | flat LeWM + IDM | 4 × 64 | 100 |
+| `droid_lewm` | flat LeWM + IDM | 2 × 128 | 100 |
 | `droid_hwm_l2` | HWM: identity level 2, trained end-to-end | 2 × 128 | 100 |
 | `droid_hjepa_l2` | H-JEPA: latent-MLP level 2, trained end-to-end | 2 × 128 | 150 (the paper reads epoch 100) |
 
 An epoch is 292 steps. Each run takes one process per GPU: the script launches
-`srun --ntasks-per-node=<GPUs> python main_hjepa.py --config-name droid_<model> seed=<seed> trainer.devices=<GPUs>`,
-so run it inside a SLURM allocation with 4 GPUs and 4 tasks per node, or submit each command as its
+`srun --ntasks-per-node=2 python main_hjepa.py --config-name droid_<model> seed=<seed>`,
+so run it inside a SLURM allocation with 2 GPUs and 2 tasks per node, or submit each command as its
 own job. `MODELS` and `SEEDS` restrict it as in §4.1. A run writes:
 
 ```
