@@ -95,13 +95,13 @@ class HierarchicalSolver:
     ) -> dict:
         """Plan top-down: each level's predicted latents become the goals of the level below.
 
-        A level with planning horizon 1 (other than level 1) is skipped. Each planned level takes
-        its goal from one of three sources:
-          - the level above planned: its first predicted latent (and macro-action), with the cost
-            measured in the upper level's space;
-          - the level(s) above were skipped with ``horizon_one_goal_cost_space='upper'``: the true
-            goal at the highest skipped level, with predictions projected up to it at stride 1;
-          - otherwise: the true goal at this level.
+        A level with planning horizon 1 (other than level 1) is skipped. Each planned level then
+        takes its goal from one of two sources:
+          - no plan from the level above (top level, or every level above was skipped): the real
+            goal, measured at this level or, through skipped levels with
+            ``horizon_one_goal_cost_space='upper'``, at the highest of them;
+          - the level above planned: its first predicted latent (and macro-action), measured in
+            the upper level's space.
         """
         subgoal_latents = None
         subgoal_actions = None
@@ -139,8 +139,24 @@ class HierarchicalSolver:
             level_info['embed_0'] = obs_embeddings[f'embed_{level}']
             level_info['action_cost_weight'] = level_cfg.action_cost_weight
 
-            if subgoal_latents is not None:
-                # Goal: the upper plan's first predicted latent (+ macro-action).
+            if subgoal_latents is None:
+                # No plan from the level above: this is the top level, or every level above
+                # was skipped (horizon 1). Aim at the real goal. It is measured at this level,
+                # unless skipped levels with horizon_one_goal_cost_space='upper' passed down a
+                # higher level; then every predicted step is encoded up to that level
+                # (stride 1) and compared with the real goal there. This is also how the
+                # _project configs measure level-1 cost in a level-k latent.
+                goal_level = skipped_goal_level or level
+                level_info['goal_embed_0'] = goal_embeddings[f'embed_{goal_level}']
+                level_info['goal_embed_0_level'] = goal_level
+                level_info['goal_embed_0_in_upper_space'] = goal_level > level
+                level_info['dense_upper_goal_projection'] = goal_level > level
+                this_level_anchored = True
+            else:
+                # The level above planned: follow its plan. The goal is its first predicted
+                # latent (the next waypoint), compared in the upper level's latent space after
+                # encoding this level's predictions at the upper level's stride. The upper
+                # plan's first macro-action is also a target (used when action_cost_weight > 0).
                 num_subgoals = self._level_plan_config(level + 1).num_subgoals
                 first_pred_idx = 1 if subgoal_latents.shape[1] > 1 else 0
                 first_action_idx = max(0, first_pred_idx - 1)
@@ -166,18 +182,6 @@ class HierarchicalSolver:
                 level_info['goal_embed_0'] = next_goal
                 level_info['goal_action'] = next_action
                 level_info['goal_embed_0_in_upper_space'] = True
-            elif skipped_goal_level is not None:
-                # Goal: the true goal at the highest skipped level.
-                level_info['goal_embed_0'] = goal_embeddings[f'embed_{skipped_goal_level}']
-                level_info['goal_embed_0_level'] = skipped_goal_level
-                level_info['goal_embed_0_in_upper_space'] = True
-                level_info['dense_upper_goal_projection'] = True
-                this_level_anchored = True
-            else:
-                # Goal: the true goal at this level.
-                level_info['goal_embed_0'] = goal_embeddings[f'embed_{level}']
-                level_info['goal_embed_0_in_upper_space'] = False
-                this_level_anchored = True
 
             # num_subgoals, upper JEPA stride, and planning_horizon are coupled:
             # after stride-subsampling the level-N rollout (T+1 frames → ceil((T+1)/stride))
@@ -366,13 +370,19 @@ class HierarchicalSolver:
 
 
 class LevelCostModel(nn.Module):
-    """Adapter that keeps rollout in local space and computes cost in parent space.
+    """Cost model for one level: rolls out in the level's own latent space and scores the
+    predictions against the goal in the goal's latent space.
 
-    For non-top levels, predicted latents are first encoded with the JEPA encoder
-    from the level above before comparing against ``goal_embed_0``. When the goal
-    lives more than one level up (every level in between was skipped at horizon 1
-    with ``horizon_one_goal_cost_space='upper'``), the encoders are chained level
-    by level up to ``goal_embed_0_level``.
+    ``get_cost`` runs three stages:
+      1. roll out this level's predictor from ``embed_0`` with the candidate actions;
+      2. if the goal lives at a higher level, encode the predicted latents (and, for the
+         action cost, the candidate actions) up to that level with the upper JEPA encoders.
+         The goal is usually the next waypoint of the level above, compared at that level's
+         stride. When every level in between was skipped at horizon 1 with
+         ``horizon_one_goal_cost_space='upper'``, the goal is the real goal at the highest
+         skipped level, and the predictions are encoded up the chain at stride 1 ("dense"), so
+         every predicted step is scored;
+      3. compare with ``goal_embed_0`` (``JEPA.criterion``), plus the weighted action cost.
     """
 
     def __init__(
@@ -403,9 +413,7 @@ class LevelCostModel(nn.Module):
             pred_emb,
             action_candidates if action_weight != 0.0 else None,
             use_upper_space=use_upper_space,
-            dense_upper_goal_projection=bool(
-                info_dict.get("dense_upper_goal_projection", False)
-            ),
+            dense=bool(info_dict.get("dense_upper_goal_projection", False)),
             goal_level=goal_level,
         )
 
@@ -417,6 +425,92 @@ class LevelCostModel(nn.Module):
             if action_cost is not None:
                 cost = cost + action_weight * action_cost
         return cost
+
+    def _project_to_goal_space(
+        self,
+        pred_emb: torch.Tensor,
+        action_candidates: torch.Tensor | None,
+        *,
+        use_upper_space: bool,
+        dense: bool,
+        goal_level: int,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Encode predicted latents (and candidate actions) up to the goal's level."""
+        if not self.upper_models or not use_upper_space:
+            return pred_emb, None
+
+        # Front-pad the predicted stream so that every window of the upper encoder is full.
+        # Real-stride projection uses causal windows: pad window_size - 1. Dense (stride-1)
+        # projection slides full windows over the stream: pad only when the stream is
+        # shorter than one window. Actions get the same front pad, with zeros. With
+        # window_size 1 (all paper models) the pad is 0.
+        window_size = self.upper_models[0].temporal_window_size
+        pad = max(0, window_size - pred_emb.shape[-2]) if dense else window_size - 1
+        states = self._prefix_repeat_first(pred_emb, pad)
+
+        pred_for_cost = self._encode_states_up(states, dense=dense, goal_level=goal_level)
+        action_for_cost = None
+        if action_candidates is not None:
+            action_for_cost = self._encode_actions_up(
+                states, action_candidates, pad=pad, dense=dense
+            )
+        return pred_for_cost, action_for_cost
+
+    def _encode_states_up(
+        self,
+        states: torch.Tensor,
+        *,
+        dense: bool,
+        goal_level: int,
+    ) -> torch.Tensor:
+        """Encode the padded predicted stream with the level above, then chain up to goal_level."""
+        # None: each upper encoder uses its own temporal_stride.
+        temporal_stride = 1 if dense else None
+        b, s = states.shape[:2]
+        input_key = f'embed_{self.level}'
+        upper_out = self.upper_models[0].encode(
+            {input_key: states.flatten(0, 1)},
+            key=input_key,
+            chunk_temporal_inputs=True,
+            temporal_stride=temporal_stride,
+        )
+        for upper_level in range(self.level + 2, goal_level + 1):
+            input_key = f'embed_{upper_level - 1}'
+            upper_out = self.upper_models[upper_level - self.level - 1].encode(
+                {input_key: upper_out['embed_0']},
+                key=input_key,
+                chunk_temporal_inputs=True,
+                temporal_stride=temporal_stride,
+            )
+        return upper_out["embed_0"].unflatten(0, (b, s))
+
+    def _encode_actions_up(
+        self,
+        states: torch.Tensor,
+        action_candidates: torch.Tensor,
+        *,
+        pad: int,
+        dense: bool,
+    ) -> torch.Tensor:
+        """Pool the candidate actions into the upper level's macro-actions."""
+        upper_model = self.upper_models[0]
+        b, s = states.shape[:2]
+        # Embed, front-pad like the states, and pad the end to the state length so the
+        # upper model chunks states and actions with the same windows.
+        action_emb = self.model.action_embed(action_candidates)
+        action_emb = self._prefix_zeros(action_emb, pad)
+        action_emb = self._pad_zeros_to_length(action_emb, states.shape[-2])
+        input_key = f'embed_{self.level}'
+        chunked = upper_model._chunk_temporal_info(
+            {input_key: states.flatten(0, 1), "action": action_emb.flatten(0, 1)},
+            key=input_key,
+            stride=1 if dense else upper_model.temporal_stride,
+            window_size=upper_model.temporal_window_size,
+        )
+        pooled = upper_model.action_encoder(chunked["action"], chunked["action_mask"])
+
+        # The final pooled action points beyond the final encoded upper state.
+        return pooled.unflatten(0, (b, s))[..., :-1, :]
 
     def _action_cost(
         self,
@@ -438,119 +532,6 @@ class LevelCostModel(nn.Module):
             reduction="none",
         )
         return cost.sum(dim=tuple(range(2, cost.ndim)))
-
-    def _project_to_goal_space(
-        self,
-        pred_emb: torch.Tensor,
-        action_candidates: torch.Tensor | None = None,
-        *,
-        use_upper_space: bool,
-        dense_upper_goal_projection: bool,
-        goal_level: int,
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Encode predicted embeddings through the upper-level JEPA encoder(s)."""
-        if not self.upper_models or not use_upper_space:
-            return pred_emb, None
-
-        temporal_stride = None
-        if dense_upper_goal_projection:
-            # Encode the level-1 prediction stream into the upper space at stride 1
-            # (one upper latent per sliding kernel-window) to score every predicted
-            # step against the upper goal. Windowed prep supports window_size > 1.
-            temporal_stride = 1
-
-        prepared_pred = self._prepare_upper_state_stream(
-            pred_emb, dense=bool(dense_upper_goal_projection)
-        )
-        b, s = prepared_pred.shape[:2]
-        input_key = f'embed_{self.level}'
-        upper_out = self.upper_models[0].encode(
-            {input_key: prepared_pred.flatten(0, 1)},
-            key=input_key,
-            chunk_temporal_inputs=True,
-            temporal_stride=temporal_stride,
-        )
-        # Chain the dense (stride-1) output stream through each further level.
-        for upper_level in range(self.level + 2, goal_level + 1):
-            input_key = f'embed_{upper_level - 1}'
-            upper_out = self.upper_models[upper_level - self.level - 1].encode(
-                {input_key: upper_out['embed_0']},
-                key=input_key,
-                chunk_temporal_inputs=True,
-                temporal_stride=temporal_stride,
-            )
-
-        pred_for_cost = upper_out["embed_0"].unflatten(0, (b, s))
-        action_for_cost = None
-        if action_candidates is not None:
-            action_for_cost = self._project_actions_with_upper(
-                prepared_pred,
-                action_candidates,
-                temporal_stride=temporal_stride,
-                dense=bool(dense_upper_goal_projection),
-                state_len=pred_emb.shape[-2],
-            )
-
-        return pred_for_cost, action_for_cost
-
-    def _project_actions_with_upper(
-        self,
-        prepared_pred: torch.Tensor,
-        action_candidates: torch.Tensor,
-        *,
-        temporal_stride: int | None = None,
-        dense: bool = False,
-        state_len: int | None = None,
-    ) -> torch.Tensor:
-        upper_model = self.upper_models[0]
-        input_key = f'embed_{self.level}'
-        b, s = prepared_pred.shape[:2]
-        prepared_action = self._prepare_upper_action_stream(
-            action_candidates,
-            target_len=prepared_pred.shape[-2],
-            dense=dense,
-            state_len=state_len,
-        )
-        chunked = upper_model._chunk_temporal_info(
-            {input_key: prepared_pred.flatten(0, 1), "action": prepared_action.flatten(0, 1)},
-            key=input_key,
-            stride=upper_model.temporal_stride if temporal_stride is None else temporal_stride,
-            window_size=upper_model.temporal_window_size,
-        )
-        pooled = upper_model.action_encoder(chunked["action"], chunked["action_mask"])
-
-        # The final pooled action points beyond the final encoded upper state.
-        return pooled.unflatten(0, (b, s))[..., :-1, :]
-
-    def _prepare_upper_state_stream(
-        self, pred_emb: torch.Tensor, *, dense: bool = False
-    ) -> torch.Tensor:
-        # Non-dense (real-stride rollout): causal windows -> front-pad by kernel-1.
-        # Dense (stride-1 goal projection): pad only enough to form one full window
-        # when the stream is shorter than the kernel, then slide -> num windows =
-        # max(1, N - kernel + 1). Both reduce to zero padding at window_size=1, so
-        # a window_size=1 model is bit-identical to the pre-existing behavior.
-        window_size = self.upper_models[0].temporal_window_size
-        count = (
-            max(0, window_size - pred_emb.shape[-2]) if dense else window_size - 1
-        )
-        return self._prefix_repeat_first(pred_emb, count)
-
-    def _prepare_upper_action_stream(
-        self,
-        action_candidates: torch.Tensor,
-        *,
-        target_len: int,
-        dense: bool = False,
-        state_len: int | None = None,
-    ) -> torch.Tensor:
-        # Mirror the state-stream front-pad (see _prepare_upper_state_stream) so
-        # actions stay aligned to the upper states; actions pad with zeros.
-        window_size = self.upper_models[0].temporal_window_size
-        count = max(0, window_size - state_len) if dense else window_size - 1
-        action_emb = self.model.action_embed(action_candidates)
-        action_emb = self._prefix_zeros(action_emb, count)
-        return self._pad_zeros_to_length(action_emb, target_len)
 
     @staticmethod
     def _prefix_repeat_first(x: torch.Tensor, count: int) -> torch.Tensor:

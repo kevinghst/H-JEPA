@@ -70,7 +70,7 @@ The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read fro
 |---|---|---|
 | Push-T | `pusht_expert_train.h5`, `pusht_expert_val.h5` | download (LeWM) |
 | OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) |
-| Visual AntMaze | `visual_antmaze_medium_{explore_train,stitch_train_2_5x,stitch_val_2_5x}.h5`, `visual_antmaze_medium_probing_{train_2_5x,eval_explore_2_5x,eval_stitch_2_5x}.h5` | generated |
+| Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val_2_5x}.h5`, `visual_antmaze_medium_probing_{train_2_5x,eval_explore_2_5x,eval_stitch_2_5x}.h5` | generated |
 | FourRoom Distractors | `fourroom_7_21/tp35/fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | generated |
 | DROID | `droid_paths_minus16_256p.csv`, `droid_val_indist_256p.csv` and the 256p mp4 episodes they list | download (`<LINK: DROID 256p corpus>`) |
 
@@ -87,14 +87,15 @@ python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5 
 (`params_400000.pkl`, `flags.json`). From the repository root:
 
 ```bash
-for name in explore_train stitch_train_2_5x stitch_val_2_5x \
+for name in explore_stitch_train stitch_val_2_5x \
             probing_train_2_5x probing_eval_explore_2_5x probing_eval_stitch_2_5x; do
   python scripts/data/collect_antmaze.py --config-name visual_antmaze_medium_$name
 done
 ```
 
-Training mixes the explore and stitch sets 50/50 on the fly (`data.dataset.sources` in
-`config/train/base/ant.yaml`).
+The training set is half explore, half stitch trajectories (12,500 episodes each). The released
+file is the exact data the seed-42 paper models were trained on; the collection config produces an
+equivalent file, not an identical one.
 
 **FourRoom Distractors.** From the repository root:
 

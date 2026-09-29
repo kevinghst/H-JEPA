@@ -4,12 +4,22 @@ H-JEPA (this repo) is the source of truth for the release since 2026-09-27. The 
 `code_release` branch (`stable-wm-lejepa`, commit `bc777ef`) is frozen; do not port changes back.
 Provenance of every config: `.agents/provenance.md`. How to verify a change: the `release-check` skill.
 
+## check lists
+
+[] load model ckpts
+[] upload datasets
+[] uploade eval tasks
+[] verify code for generating datasets
+[] verify code for generating eval tasks
+
+
 ## Open questions / decisions
 
 1. Push-T 4-level planner: no compute sweep, `pusht_l4` keeps the paper setting; FLOPs/episode
    unknown (may exceed 100 TFLOPs).
-2. Ant `visual_antmaze_medium_stitch_train_2_5x.h5` has no collection sidecar; the seed in
-   `scripts/data/config/visual_antmaze_medium_stitch_train_2_5x.yaml` (1072) is a placeholder.
+2. Ant train set: the stitch half of `visual_antmaze_medium_explore_stitch_train.h5` comes from
+   `visual_antmaze_medium_stitch_train_2_5x.h5`, which has no collection sidecar; the stitch seed in
+   `scripts/data/config/visual_antmaze_medium_explore_stitch_train.yaml` (1072) is a placeholder.
 3. FourRoom val/probing sets are exact prefixes of the train set (all collected with seed 3072).
    Planning unaffected; val loss / probing numbers inflated.
 4. Cube train/val split (9,800/200 episodes of `cube_single_expert.h5`): splitting script not
@@ -208,6 +218,15 @@ Round 4
   branch of the loop (the dense path now runs `_encode_level1` on every frame), the action/proprio
   restore and the input checks. Sparse outputs and fwd_test losses bit-identical; the dense path
   no longer leaks stale `pixel_embed_{0,2,3}` / `proprio_embed_{0,2,3}` keys on Ant.
+
+Round 5
+- Ant on-the-fly 50/50 explore/stitch mixing (`MixedHDF5Dataset`, `_select_mixed_episode_subsets`,
+  config keys `sources` / `mix_mode` / `subset_unit` and the train `total_transitions`). Ant trains on `visual_antmaze_medium_explore_stitch_train.h5`, built
+  (2026-09-29) from the seed-42 selection: all 12,500 explore episodes + 12,500 of the 31,250 stitch
+  episodes, columns `pixels action xy qpos qvel proprio` (+ episode index columns). Seeds 43/44 now
+  train on the seed-42 subset instead of their own. The collection configs
+  `visual_antmaze_medium_{explore_train,stitch_train_2_5x}.yaml` became one
+  `visual_antmaze_medium_explore_stitch_train.yaml` (collects an equivalent, not identical, file).
 
 DROID (not ported from eb_jepa)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;
