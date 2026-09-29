@@ -172,6 +172,39 @@ class ModelObjectCallBack(Callback):
         self._save_final(trainer, pl_module)
 
 
+def _batches_done(trainer) -> int:
+    """Train batches processed so far in this run, restored from a resume checkpoint."""
+    return int(trainer.fit_loop.epoch_loop.batch_progress.total.processed)
+
+
+class ResumeCheckpoint(Callback):
+    """Full training state (weights, optimizer, scheduler, loop counters) to `path`.
+
+    Written atomically every `every_n` train batches and at every epoch end, so a preempted
+    run resumes mid-epoch (`ResumableManager` in main_hjepa.py loads it). The dataloader is
+    not fast-forwarded: the resumed epoch restarts its sample order.
+    """
+
+    def __init__(self, path: Path, every_n: int):
+        super().__init__()
+        self.path, self.every_n = Path(path), int(every_n)
+
+    def _save(self, trainer) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        trainer.save_checkpoint(str(tmp))
+        if trainer.is_global_zero:
+            tmp.replace(self.path)
+            logging.info(f"Resume checkpoint after train batch {_batches_done(trainer)} -> {self.path}")
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if _batches_done(trainer) % self.every_n == 0:
+            self._save(trainer)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        self._save(trainer)
+
+
 class TrainBatchLimitCallback(Callback):
     """Stop training after a fixed number of train dataloader batches."""
 
@@ -186,7 +219,11 @@ class TrainBatchLimitCallback(Callback):
         self._train_batches_seen = 0
 
     def on_train_start(self, trainer, pl_module):
-        self._train_batches_seen = 0
+        # Count from the restored step so the budget spans the whole run across resumes.
+        self._train_batches_seen = _batches_done(trainer)
+        logging.info(f"TrainBatchLimitCallback: {self._train_batches_seen} train batches already done")
+        if self.max_train_batches_total is not None and self._train_batches_seen >= self.max_train_batches_total:
+            trainer.should_stop = True
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if self.max_train_batches_total is None:

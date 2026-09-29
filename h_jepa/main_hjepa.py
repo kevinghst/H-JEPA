@@ -23,6 +23,7 @@ from utils import (
     ModelObjectCallBack,
     DebugArtifactCleanupCallback,
     PlanningEvalCallback,
+    ResumeCheckpoint,
     TrainBatchLimitCallback,
 )
 from final_probing_decoding_eval import FinalProbingDecodingEvalCallback
@@ -51,6 +52,36 @@ class HJEPAModule(spt.Module):
             params = [p for p in group["params"] if p.grad is not None]
             if params:
                 torch.nn.utils.clip_grad_norm_(params, float(gradient_clip_val))
+
+
+class ResumableManager(spt.Manager):
+    """spt.Manager that resumes from the run dir's `ResumeCheckpoint` file.
+
+    With `resume_file` set, any start (new job id or SLURM requeue) loads it with full state
+    when it exists and otherwise starts fresh (from `ckpt_path` if given). spt's own requeue
+    index is never used then: it is keyed by SLURM job id, so a second run inside the same job
+    would restore the first run's state. With `resume_file=None`, spt decides, except that a
+    requeue preempted before spt's first epoch-end checkpoint starts fresh instead of raising.
+    """
+
+    def __init__(self, *args, resume_file: Path | None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.resume_file = None if resume_file is None else Path(resume_file)
+
+    def _resolve_load_path(self, run_dir):
+        if self.resume_file is not None:
+            if self.resume_file.is_file():
+                logging.info(f"Resuming full training state from {self.resume_file}")
+                return str(self.resume_file), False
+            logging.info(f"No resume file at {self.resume_file}; starting from ckpt_path={self.ckpt_path}")
+            return (str(self.ckpt_path), self.weights_only) if self.ckpt_path else (None, None)
+        try:
+            return super()._resolve_load_path(run_dir)
+        except RuntimeError as e:
+            if "no last.ckpt" not in str(e):
+                raise
+            logging.warning(f"Requeue with nothing to resume from; starting fresh ({e})")
+            return None, None
 
 
 def _build_hjepa_optimizer_factory(model, cfg):
@@ -303,9 +334,14 @@ def run(cfg):
                     )
                 )
 
+    resume_file = run_dir / "lightning_resume" / "last.ckpt"
+    resume_every = cfg.get("resume_every_n_steps", 2000)
+    resume_callbacks = [ResumeCheckpoint(resume_file, resume_every)] if resume_every else []
+
     trainer = pl.Trainer(
         **cfg.trainer,
         callbacks=[
+        *resume_callbacks,
         debug_cleanup_callback,
         train_batch_limit_callback,
         object_dump_callback,
@@ -322,7 +358,8 @@ def run(cfg):
     if cfg.get("quick_debug", False) or not manager_ckpt_path.exists():
         manager_ckpt_path = None
 
-    manager = spt.Manager(
+    manager = ResumableManager(
+        resume_file=resume_file if resume_every else None,
         trainer=trainer,
         module=world_model,
         data=data_module,

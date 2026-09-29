@@ -1,3 +1,4 @@
+import os
 import shlex
 import subprocess
 import sys
@@ -67,6 +68,7 @@ def _resolve_existing_path(path: str | Path) -> Path:
         Path.cwd() / raw_path,
         Path(__file__).parent / raw_path,
         Path(__file__).parent.parent / raw_path,
+        Path(os.getenv("STABLEWM_HOME", "~/.stable_worldmodel")).expanduser() / raw_path,
     ]
     for candidate in candidates:
         if candidate.exists():

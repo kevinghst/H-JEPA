@@ -21,6 +21,9 @@ quick_debug: false
 local_cache_dir: true
 output_model_name: model
 subdir: ${output_model_name}/seed${seed}
+hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
+  run:
+    dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
 num_workers: 6
 train_split: null
 seed: 42
@@ -29,6 +32,7 @@ patch_size: 16
 encoder_scale: small
 dump_object: true
 save_every_n_epochs: 2
+resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
 trainer:
   max_epochs: 100
   devices: auto
