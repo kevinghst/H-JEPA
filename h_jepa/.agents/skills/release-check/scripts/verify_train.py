@@ -25,6 +25,7 @@ REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|de
            r"level\d+\.predictor\.ensemble_size$", r"level\d+\.loss\.embed\.temp_straight\..*",
            r"level\d+\.wm\.type$", r"level\d+\.(encoder\.|encoder\.pixel_encoder\.encoder\.)resnet9$",
            r"data\.dataset\.(random_waypoints|augment_static_window_prob|precompute_levels)$",
+           r"data\.dataset\.(sources|mix_mode|subset_unit)$",
            r"data\.dataset\.level\d+\.(load|sample_range_low|sample_range_high)$",
            r"(encoder_resnet9|projector_loss_weight|train_value_function)$", r"optimizer\.decoder\..*",
            r"(local_cache_dir|train_split)$", r"level\d+\.encoder\.residual$", r"level\d+\.action_encoder\.uniform_input$",
@@ -54,6 +55,9 @@ def main():
                     cfg = compose(config_name=f"{env}_{model}", overrides=[f"seed={seed}"])
                     A = flat(OmegaConf.to_container(cfg, resolve=False))
                     B = rename_action_keys(flat(yaml.safe_load(open(ROOT + path.format(s=seed) + "/config.yaml"))))
+                    if "data.dataset.sources" in B:
+                        # Ant: the mix's transition budget is now the whole pre-built train file
+                        del B["data.dataset.total_transitions"]
                     diffs = [(k, A.get(k, "<none>"), B.get(k, "<none>")) for k in sorted(set(A) | set(B))
                              if not k.startswith(IGNORED) and not any(re.fullmatch(p, k) for p in REMOVED)
                              and str(A.get(k, "<none>")) != str(B.get(k, "<none>"))]

@@ -41,8 +41,8 @@ loader.persistent_workers=false
    smoke-test cost and is not reduced by `limit_train_batches`.
    - FourRoom, Cube, Push-T: train on the small val file instead:
      `data.dataset.name='${data.dataset.val_name}' ++data.dataset.total_transitions=null`
-   - Ant trains on a mixture (`data.dataset.sources`), so the name swap does not apply; subsample
-     instead: `++data.dataset.total_transitions=40000`
+   - Ant: its val file is also large (6 GB), so subsample the train file instead:
+     `++data.dataset.total_transitions=40000`
 
 4. Planning eval. Release configs run it once at the end of training
    (`planning_eval.run_on_train_end=true`). Keep it unless the real command disables it, and shrink

@@ -317,20 +317,17 @@ def _mean(values: list[float]) -> float:
 
 
 def _dataset_col_variance(dataset, col: str, device) -> torch.Tensor:
-    if hasattr(dataset, "get_col_stats"):
-        _, std = dataset.get_col_stats(col)
-    else:
-        data = np.asarray(dataset.get_col_data(col))
-        flat = data.reshape(data.shape[0], -1)
-        valid_mask = ~np.isnan(flat).any(axis=1)
-        valid = data[valid_mask].astype(np.float64, copy=False)
-        if valid.shape[0] == 0:
-            raise ValueError(f"Column {col!r} has no finite rows.")
-        std = valid.std(
-            axis=0,
-            ddof=1 if valid.shape[0] > 1 else 0,
-            keepdims=True,
-        )
+    data = np.asarray(dataset.get_col_data(col))
+    flat = data.reshape(data.shape[0], -1)
+    valid_mask = ~np.isnan(flat).any(axis=1)
+    valid = data[valid_mask].astype(np.float64, copy=False)
+    if valid.shape[0] == 0:
+        raise ValueError(f"Column {col!r} has no finite rows.")
+    std = valid.std(
+        axis=0,
+        ddof=1 if valid.shape[0] > 1 else 0,
+        keepdims=True,
+    )
 
     return torch.as_tensor(std, dtype=torch.float32, device=device).reshape(-1).square()
 

@@ -78,7 +78,7 @@ def _record_antmaze_dataset(
     )
 
 
-@hydra.main(version_base=None, config_path='./config', config_name='visual_antmaze_medium_explore_train')
+@hydra.main(version_base=None, config_path='./config', config_name='visual_antmaze_medium_explore_stitch_train')
 def run(cfg: DictConfig):
     """Collect visual AntMaze data with the OGBench policy."""
     start_time = time.time()

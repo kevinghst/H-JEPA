@@ -3,15 +3,7 @@
 data:
   dataset:
     name: visual_antmaze_medium_explore_stitch_train
-    mix_mode: subset
-    subset_unit: episode
     subset_seed: ${seed}
-    total_transitions: 10050000
-    sources:
-    - name: visual_antmaze_medium_explore_train
-      proportion: 0.5
-    - name: visual_antmaze_medium_stitch_train_2_5x
-      proportion: 0.5
     val_name: visual_antmaze_medium_stitch_val_2_5x
     val_total_transitions: 201000
     keys_to_load:

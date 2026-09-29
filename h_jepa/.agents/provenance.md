@@ -77,6 +77,12 @@ The README tables come from the paper-figure data in the development repo
 
 - AntMaze / FourRoom collection configs in `scripts/data/config/` are the sidecar configs saved next
   to each dataset (`$STABLEWM_HOME/*.yaml`, `$STABLEWM_HOME/fourroom_7_21/tp35/*.collection.yaml`),
-  except `visual_antmaze_medium_stitch_train_2_5x`, which had no sidecar (seed is a placeholder).
+  except `visual_antmaze_medium_explore_stitch_train`, which replaces the two paper training sets.
+- Ant training set: the paper runs mixed `visual_antmaze_medium_explore_train` (all 12,500 episodes)
+  and `visual_antmaze_medium_stitch_train_2_5x` (12,500 of 31,250 episodes, drawn with
+  `subset_seed = seed`) on the fly. `visual_antmaze_medium_explore_stitch_train.h5` holds the seed-42
+  draw (training columns only), so it is exactly the seed-42 models' training data; seeds 43/44
+  trained on different stitch episodes. The stitch set had no sidecar, so the stitch seed in its
+  collection config is a placeholder.
 - Eval tasks: `h_jepa/assets/eval_trajs/{ant/expert_grid_d3_n50, fourroom/fourroom_tp35_cross2_goal75_n50_d1,
   ogbench/goal_offset_20_pickup_val, pusht/goal_offset_75_val}.pt`, the files the paper evals loaded.

@@ -126,7 +126,7 @@ def run(cfg):
 
     val_dataset_cfg = {
         k: v for k, v in dataset_cfg.items()
-        if k not in ("sources", "total_transitions")
+        if k != "total_transitions"
     }
     val_dataset_cfg["name"] = val_name
     if val_total_transitions is not None:
