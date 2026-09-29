@@ -5,7 +5,7 @@
   python launch.py resume <run_dir> [hydra overrides, e.g. trainer.max_epochs=100] [--dry]
   python launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [--chunk K] [--tasks <abs .pt>] \\
       [eval.py overrides, e.g. eval.num_eval=4] [--dry]
-  common flags: --partition P --account A --qos Q --time HH:MM:SS (partition and account go together)
+  common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G (partition and account go together)
 
 train   One job per (grid cell x seed): the cartesian product of every --grid key=v1,v2 and --seeds.
         Sweep dir $STABLEWM_HOME/ckpts/<sweep>_<YYYY-MM-DD_HH-MM>/, run dirs <sweep_dir>/<cell>/seed<S>,
@@ -74,9 +74,11 @@ def cluster(sub: str, a: argparse.Namespace) -> OmegaConf:
     c = OmegaConf.merge(c, c.get(sub) or {})
     if a.partition and not a.account:
         die("--partition needs --account too (they are set together)")
-    for k in ("partition", "account", "qos", "time"):
+    for k in ("partition", "account", "qos", "time", "mem"):
         if getattr(a, k):
             c[k] = getattr(a, k)
+    if a.gpus:
+        c.gpus_per_node = a.gpus
     keys = ("venv", "partition", "account", "qos", "gpus_per_node", "cpus_per_task", "mem", "time")
     if missing := [k for k in keys if c.get(k) in (None, "")]:
         die(f"cluster settings missing {missing}: set them in {H}/config/slurm/local.yaml")
@@ -279,7 +281,7 @@ def cmd_resume(a, overrides: list) -> None:
     if live := {name, str(saved.output_model_name)} & active_job_names():
         die(f"a job named {live} is queued or running for {rd}")
     dev = OmegaConf.select(saved, "trainer.devices")
-    gpus = dev if isinstance(dev, int) else int(c.gpus_per_node)
+    gpus = a.gpus or (dev if isinstance(dev, int) else int(c.gpus_per_node))
     ov = [*overrides, f"trainer.devices={gpus}", f"hydra.run.dir={rd}/hydra"]
     compose_cfg(rd, "config", ov)
     code = code_root(rd, home, a.dry, "resume")
@@ -365,8 +367,9 @@ def cmd_eval(a, overrides: list) -> None:
 
 def main() -> None:
     common = argparse.ArgumentParser(add_help=False)
-    for f in ("--partition", "--account", "--qos", "--time"):
+    for f in ("--partition", "--account", "--qos", "--time", "--mem"):
         common.add_argument(f)
+    common.add_argument("--gpus", type=int, help="GPUs per node (train: trainer.devices)")
     common.add_argument("--dry", action="store_true", help="run every check, print the sbatch lines")
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = p.add_subparsers(dest="cmd", required=True)
