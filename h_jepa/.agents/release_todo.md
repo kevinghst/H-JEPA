@@ -4,6 +4,15 @@ H-JEPA (this repo) is the source of truth for the release since 2026-09-27. The 
 `code_release` branch (`stable-wm-lejepa`, commit `bc777ef`) is frozen; do not port changes back.
 Provenance of every config: `.agents/provenance.md`. How to verify a change: the `release-check` skill.
 
+## check lists
+
+[] load model ckpts
+[] upload datasets
+[] uploade eval tasks
+[] verify code for generating datasets
+[] verify code for generating eval tasks
+
+
 ## Open questions / decisions
 
 1. Push-T 4-level planner: no compute sweep, `pusht_l4` keeps the paper setting; FLOPs/episode
