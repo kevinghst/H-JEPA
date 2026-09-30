@@ -362,7 +362,7 @@ def hjepa_forward(
         action_sigreg_coeff = float(level_cfg.get("action_sigreg_coeff", 0.0))
         if action_sigreg_coeff > 0:
             action_sigreg_loss = getattr(self, _sigreg_module_name("action", level))(
-                act_emb.transpose(0, 1)
+                act_emb[:, : emb.size(1) - 1].transpose(0, 1)
             )
             output[_component_loss_key("sigreg", "action", level_suffix)] = action_sigreg_loss
             level_loss = level_loss + action_sigreg_coeff * action_sigreg_loss

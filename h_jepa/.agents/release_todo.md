@@ -95,6 +95,12 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
   `scripts/migrate_ckpts_layout.sh` prints the `mv` + `subdir` rewrite for old-layout runs (not run on
   Basile's or Kevin's ckpts yet).
+- 2026-09-30 fix D1 (level-2 action SIGReg): with T level-2 states the loader builds T action chunks, the last one
+  padded past the clip end (a transition that does not exist); predictor and IDM used the first T-1, the action
+  SIGReg used all T. `hjepa_forward` now applies it to `act_emb[:, : T - 1]` as the original code did. Gates: every
+  loss term and module gradient matches the original code within 1.2e-6 relative (eb H-JEPA seed-1 e-100 weights);
+  flat forward and Cube (no action SIGReg) unchanged bitwise; `droid_hjepa_l2` / `droid_hwm_l2` change only
+  `sigreg_loss_action_level2`. DROID HWM / H-JEPA l2 fleets retrained with it (`droid_{hwm,hjepa}_l2_n1fix`).
 - Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).
