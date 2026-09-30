@@ -386,6 +386,125 @@ def _collect_solve_records(solver) -> list:
     return list(getattr(solver, "solve_records", []))
 
 
+def _leaf_solvers(solver) -> list:
+    if solver is None:
+        return []
+    if hasattr(solver, "level_solvers"):
+        return [solver.level_solvers[level] for level in sorted(solver.level_solvers)]
+    return [solver]
+
+
+def _run_chunked_eval(
+    cfg: DictConfig,
+    chunk_size: int,
+    world_cfg: DictConfig,
+    image_shape: tuple,
+    load_eval_trajs_path: str,
+    process: dict,
+    transform: dict,
+    model,
+    results_dir: Path,
+) -> dict:
+    """Evaluate the first eval.num_eval loaded tasks chunk_size at a time (one World of chunk_size
+    envs per chunk), so that a preempted eval only redoes the chunk it was in.
+
+    Each chunk writes results_dir/chunks/tasks_<start>-<end>.json (per-task results + GD solve
+    records) and is skipped when that file exists. Every chunk reseeds the planner generators with
+    base seed + its first task index: its result does not depend on which chunks ran before it in
+    the process, and a single chunk (chunk_size >= num_eval) plans with the unchunked eval's seed.
+    metrics.yaml aggregates the chunks with the keys of the unchunked eval.
+    """
+    import json
+
+    payload = torch.load(load_eval_trajs_path, map_location="cpu", weights_only=False)
+    n = int(cfg.eval.num_eval)
+    if len(payload["data"]) < n:
+        raise ValueError(f"{load_eval_trajs_path}: {len(payload['data'])} tasks < eval.num_eval={n}")
+    ep_idx = payload.get("episodes_idx")
+    ep_idx = list(ep_idx) if ep_idx is not None and len(ep_idx) else list(range(len(payload["data"])))
+    callables = OmegaConf.to_container(cfg.eval.get("callables"), resolve=True)
+    solver_requires_grad = _solver_requires_grad(cfg)
+    chunk_dir = results_dir / "chunks"
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    chunk_paths = {
+        s: chunk_dir / f"tasks_{s:03d}-{min(s + chunk_size, n):03d}.json" for s in range(0, n, chunk_size)
+    }
+
+    policy, gens = None, []
+    for start, path in chunk_paths.items():
+        if path.exists():
+            continue
+        end = min(start + chunk_size, n)
+        if policy is None:
+            policy = _build_policy(cfg, process, transform, model=model)
+            gens = [
+                (s.torch_gen, s.torch_gen.initial_seed())
+                for s in _leaf_solvers(getattr(policy, "solver", None))
+                if hasattr(s, "torch_gen")
+            ]
+        for gen, seed in gens:
+            gen.manual_seed(seed + start)
+        # shallow per-episode copies: evaluate_from_dataset reassigns their columns in place
+        chunk = {**payload, "data": [dict(ep) for ep in payload["data"][start:end]], "episodes_idx": ep_idx[start:end]}
+        world = swm.World(**{**world_cfg, "num_envs": end - start}, image_shape=image_shape)
+        try:
+            world.set_policy(policy)
+            t0 = time.time()
+            sdp_context = nullcontext()
+            if solver_requires_grad and torch.cuda.is_available():
+                sdp_context = sdpa_kernel(SDPBackend.MATH)
+            with (torch.enable_grad if solver_requires_grad else torch.no_grad)(), sdp_context:
+                metrics = world.evaluate_from_dataset(
+                    None,
+                    episodes_idx=None,
+                    start_steps=None,
+                    goal_offset_steps=cfg.eval.goal_offset_steps,
+                    eval_budget=cfg.eval.eval_budget,
+                    callables=callables,
+                    load_eval_trajs_path=chunk,
+                    process=process,
+                    start_state_mode=cfg.eval.get("start_state_mode", "dataset_full"),
+                    goal_state_mode=cfg.eval.get("goal_state_mode", "dataset_full"),
+                )
+            metrics["evaluation_time"] = time.time() - t0
+        finally:
+            world.close()
+        metrics["solve_records"] = _collect_solve_records(getattr(policy, "solver", None))
+        for s in _leaf_solvers(getattr(policy, "solver", None)):
+            if hasattr(s, "solve_records"):
+                s.solve_records = []
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_serialize_metrics(metrics)))
+        tmp.replace(path)  # atomic: a preemption never leaves a partial chunk file
+        print(f"tasks {start}-{end}: success_rate {metrics['success_rate']:.1f}")
+
+    chunks = [json.loads(p.read_text()) for p in chunk_paths.values()]
+    successes = np.concatenate([np.asarray(c["episode_successes"], dtype=bool) for c in chunks])
+    steps = np.concatenate([np.asarray(c["steps_to_success"], dtype=np.float64) for c in chunks])
+    seeds = None if chunks[0]["seeds"] is None else [s for c in chunks for s in c["seeds"]]
+    if seeds is not None:
+        assert np.unique(np.asarray(seeds)).shape[0] == n, "Some episode seeds are identical!"
+    metrics_to_save = {
+        "success_rate": float(successes.sum()) / n * 100.0,
+        "episode_successes": successes.tolist(),
+        "seeds": seeds,
+        "wall_clock_to_success": [x for c in chunks for x in c["wall_clock_to_success"]],
+        "steps_to_success": steps.tolist(),
+        "loaded_eval_original_lengths": [x for c in chunks for x in c["loaded_eval_original_lengths"]],
+        "steps_to_success_success_only": (
+            float(np.mean(steps[np.isfinite(steps)])) if np.isfinite(steps).any() else float("nan")
+        ),
+        "evaluation_time": sum(c["evaluation_time"] for c in chunks),
+        "chunk_size": chunk_size,
+    }
+    (results_dir / "metrics.yaml").write_text(OmegaConf.to_yaml(metrics_to_save))
+    print(metrics_to_save)
+    solve_records = [r for c in chunks for r in c["solve_records"]]
+    if solve_records:
+        (results_dir / "planning_compute.json").write_text(json.dumps(solve_records))
+    return metrics_to_save
+
+
 def run_planning_eval(
     cfg: DictConfig,
     model=None,
@@ -426,6 +545,15 @@ def run_planning_eval(
         eval_episodes, eval_start_idx = _sample_stratified_eval_starts(cfg, dataset)
     else:
         process = _build_eval_process_from_policy_normalizer(cfg, model=model)
+
+    chunk_size = cfg.eval.get("chunk_size", None)  # +eval.chunk_size=N: resumable per chunk of N tasks
+    if chunk_size:
+        if dump_eval_only or not load_eval_trajs_path:
+            raise ValueError("eval.chunk_size needs load_eval_trajs_path and no dump_eval_trajs_path")
+        return _run_chunked_eval(
+            cfg, int(chunk_size), world_cfg, image_shape, load_eval_trajs_path,
+            process, transform, model, resolved_results_dir,
+        )
 
     world = swm.World(**world_cfg, image_shape=image_shape)
 
