@@ -11,6 +11,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 [] uploade eval tasks
 [] verify code for generating datasets
 [] verify code for generating eval tasks
+[] check to see if unifying with basile's action clipping can work?
 
 
 ## Open questions / decisions
@@ -178,6 +179,13 @@ Round 5
   train on the seed-42 subset instead of their own. The collection configs
   `visual_antmaze_medium_{explore_train,stitch_train_2_5x}.yaml` became one
   `visual_antmaze_medium_explore_stitch_train.yaml` (collects an equivalent, not identical, file).
+- `hjepa_utils.py` cleanup (2026-09-29): the rollout loss is straight-line code (no 7-tuple
+  closures), and these are gone: the missing-key / `rollout_n` / dimension / component-name checks,
+  the mixed legacy+component loss-format error (component sections now take precedence), the
+  unused `action_encoder.type` dispatch, the optional `normalize_batch`, and the
+  `create_world_model` inner helpers. fwd_test is bit-identical, as is a scratch variant covering
+  rollout_n 2-3 (incl. history_size 1), pixel/proprio components, the legacy flat format and a
+  disabled pred term.
 
 ## Kept on purpose
 
