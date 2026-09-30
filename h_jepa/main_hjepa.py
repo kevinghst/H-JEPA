@@ -44,11 +44,11 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-class HJEPAModule(spt.Module):
+class GradClipModule(spt.Module):
     def clip_gradients(self, optimizer, gradient_clip_val=None, gradient_clip_algorithm=None):
         if not self._train_cfg.get("grad_clip_per_level", False):
             return super().clip_gradients(optimizer, gradient_clip_val, gradient_clip_algorithm)
-        # eb_jepa grad_clip_per_level: each param group (level{N}) gets its own norm budget.
+        # grad_clip_per_level: each param group (level{N}) gets its own norm budget.
         for group in optimizer.param_groups:
             params = [p for p in group["params"] if p.grad is not None]
             if params:
@@ -235,7 +235,7 @@ def run(cfg):
         }
 
     data_module = spt.data.DataModule(train=train, val=val)
-    world_model = HJEPAModule(
+    world_model = GradClipModule(
         **models,
         **losses,
         forward=partial(_hjepa_training_forward, cfg=cfg),

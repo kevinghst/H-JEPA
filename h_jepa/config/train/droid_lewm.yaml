@@ -1,4 +1,4 @@
-# DROID: flat CLS model (eb_jepa recipe: ViT-S/16 + causal transformer, nsteps 2, IDM).
+# DROID: flat CLS model (ViT-S/16 + causal transformer, nsteps 2, IDM).
 defaults:
 - base/droid
 - _self_
@@ -6,4 +6,5 @@ output_model_name: droid_lewm
 num_levels: 1
 level1:
   wm:
+    nsteps: 2
     detach_pred_target: true

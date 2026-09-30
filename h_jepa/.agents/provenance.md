@@ -89,14 +89,14 @@ The README tables come from the paper-figure data in the development repo
 
 ## DROID
 
-The DROID models were trained with the eb_jepa code (`amilabs/research/eb_jepa`), not with
-`stable-wm-lejepa`. Paths are relative to the eb_jepa log root
+The DROID models were trained with the original training code, not with
+`stable-wm-lejepa`. Paths are relative to the original runs' log root
 `/mnt/vast/home/basile.terver/shared/eb_jepa`; each sweep holds seeds 1/1000/10000 in
 `*_seed<N>/`.
 
 ### Training configs (`config/train/droid_<model>.yaml`)
 
-| config | eb_jepa run | checkpoint |
+| config | source run | checkpoint |
 |---|---|---|
 | `droid_lewm` | `ac_video_jepa/droid_256p/sweep_cls_fpsladder_vitS_outd384_causalT_d12_fps20_nf8_bs256_4gpu_minus16_idmLADDER_ep100_3seed_DROID256p_2026-08-25_18-41/*_idm100_seed<N>` | e-100 (final) |
 | `droid_hwm_l2` | `h_ac_video_jepa/droid_256p/sweep_e2e2lvl_clsHWM_fps20_L1idm100_identityL2_NSTEPS1_ep100_3seed_2gpu_2026-09-24_14-34` | e-100 (final) |
@@ -106,7 +106,7 @@ The DROID models were trained with the eb_jepa code (`amilabs/research/eb_jepa`)
   monitoring. Assets in `h_jepa/droid_assets/`: norm stats `full_fps5`, clip manifest
   `droid_clips_waypoint_curated16v2_5fps_gw36.json` (16 clips x 37 frames, horizon 36).
 - 5 fps (`data.fps: 5`): DROID mp4s are tagged 60 fps for 15 Hz footage, so the stride is 3 frames.
-  `fps20` / `20fps` in the eb_jepa run and cell names of this section is the old name of this same 5 fps rate.
+  `fps20` / `20fps` in the source run and cell names of this section is the old name of this same 5 fps rate.
 
 ### Planning configs (`config/eval/droid_{flat,l2}.yaml`)
 
@@ -127,12 +127,12 @@ H-JEPA 39.95 ± 2.91. The LeWM bar without IDM is the zero-action floor, not a t
 
 ### Port validation
 
-- eb_jepa weights hosted in the port give identical forward outputs (max|d| = 0).
-- Eval-only reproduction on the eb_jepa weights is within planner-seed noise: flat 31.9 / 34.5 / 32.4
-  (port) vs 35.9 / 32.2 / 31.2 (eb_jepa).
+- The source runs' weights hosted in the port give identical forward outputs (max|d| = 0).
+- Eval-only reproduction on the source runs' weights is within planner-seed noise: flat 31.9 / 34.5 / 32.4
+  (port) vs 35.9 / 32.2 / 31.2 (original code).
 
 ### Not ported
 
 Decoded-plans figure (needs the visual decoder), anticollapse 16-cell grid, crossval grids,
 `tab:sf-idm0`, varcomp, selective-bars, and the TFLOPs measurement of `fig:compute-pareto-real`
-(eb_jepa `FlopCounterMode`). See `release_todo.md`.
+(`FlopCounterMode` in the original code). See `release_todo.md`.

@@ -142,8 +142,8 @@ class FlattenedSequenceEncoder(nn.Module):
         return self.encoder(x[:, None])[:, 0]
 
 
-class ActionMLPEncoder(nn.Module):
-    """Flatten a fixed-length action chunk (B, T, L, C) and compress it with an MLP (eb_jepa ActionMLP)."""
+class SequenceMLPEncoder(nn.Module):
+    """Flatten each fixed-length chunk (B, T, L, C) and compress it with an MLP."""
 
     def __init__(self, output_dim, hidden_dims, input_dim, temporal_stride, final_ln=True, trunc_normal_init=False):
         super().__init__()

@@ -371,23 +371,18 @@ class JEPA(nn.Module):
         """
         return self.predictor(emb, act_emb)
 
-    def parallel_unroll(self, emb, act_emb, nsteps, context_length, stop_gradient):
-        """eb_jepa parallel unroll: nsteps refinement passes over the full band.
-
-        Each pass predicts frames context_length..T-1 from the previous pass (the encoder band
-        on pass 0), with the first context_length ground-truth frames re-injected on the left.
+    def parallel_unroll(self, emb, act_emb, nsteps):
+        """nsteps passes over the band: each pass predicts frames 1..T-1 from the previous pass (the
+        encoder band on pass 0, detached after), with ground-truth frame 0 re-injected on the left.
         Returns every pass stacked: (nsteps, B, T, D), aligned with emb.
         """
-        T = emb.size(1) - context_length
-        predicted = emb
+        T = emb.size(1) - 1
+        pred_input = emb[:, :T]
         passes = []
-        for step in range(nsteps):
-            pred_input = predicted
-            if stop_gradient and step > 0:
-                pred_input = torch.cat([emb[:, :context_length], predicted[:, context_length:].detach()], dim=1)
-            pred = self.predict(pred_input[:, :T], act_emb[:, :T])
-            predicted = torch.cat([emb[:, :context_length], pred], dim=1)
+        for _ in range(nsteps):
+            predicted = torch.cat([emb[:, :1], self.predict(pred_input, act_emb[:, :T])], dim=1)
             passes.append(predicted)
+            pred_input = torch.cat([emb[:, :1], predicted[:, 1:T].detach()], dim=1)
         return torch.stack(passes)
 
     def rollout(self, info, action_sequence, history_size: int = 1):

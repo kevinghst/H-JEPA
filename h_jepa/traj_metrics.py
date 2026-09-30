@@ -1,5 +1,5 @@
-# Planned-vs-GT DROID end-effector path metrics, copied verbatim from eb_jepa's
-# planning/traj_metrics.py (the published DROID numbers): do not change the numerics.
+# Planned-vs-GT DROID end-effector path metrics, copied verbatim from the original planning code
+# (the published DROID numbers): do not change the numerics.
 # Actions are [T, A] raw delta-poses: 0:3 xyz, 3:6 orientation, 6 gripper.
 import numpy as np
 import torch

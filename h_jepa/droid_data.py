@@ -96,7 +96,7 @@ class DROIDClipReader(torch.utils.data.Dataset):
     def _load_states(self, path: str, camera_name: str):
         # The extrinsics are unused, but read (and indexed in _load_clip) so that an episode
         # with missing or short extrinsics fails and is replaced by the retry loop, as in the
-        # eb_jepa loader the paper runs used.
+        # loader the paper runs used.
         npz_path = os.path.join(path, "trajectory.npz")
         if os.path.exists(npz_path):
             with np.load(npz_path) as tr:

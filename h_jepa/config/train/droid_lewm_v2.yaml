@@ -1,5 +1,6 @@
-# DROID: flat CLS model, eb_jepa v2 recipe: 6-frame clips (5 teacher-forced 1-step targets),
-# nsteps 1, gradient through the prediction target, 150 epochs.
+# DROID: flat CLS model, v2 recipe: 6-frame clips (5 teacher-forced 1-step targets),
+# gradient through the prediction target, 150 epochs.
+# pred weight (T-1)/T = the paper runs' 1-step loss, averaged over all T window states (context state included).
 defaults:
 - base/droid
 - _self_
@@ -10,6 +11,10 @@ trainer:
   max_epochs: 150
 level1:
   wm:
-    history_size: 1
-    nsteps: 1
-    detach_pred_target: false
+    history_size: 5
+    rollout_n: 1
+  loss:
+    embed:
+      pred:
+        enabled: true
+        weight: ${eval:'5 / 6'}

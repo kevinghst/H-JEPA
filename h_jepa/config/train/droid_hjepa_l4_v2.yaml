@@ -1,8 +1,7 @@
-# DROID: 4-level H-JEPA trained end to end, eb_jepa v2 recipe: stride 2 at every upper level, top level
+# DROID: 4-level H-JEPA trained end to end, v2 recipe: stride 2 at every upper level, top level
 # sees 6 states (41-frame level-1 clips); every lower level trains on one random 6-state crop per batch
 # (5 teacher-forced 1-step targets per level), gradient through the prediction target, 150 epochs.
-# history_size 5 + rollout_n 1 with pred weight 5/6 = eb_jepa's nsteps-1 parallel unroll loss (which averages over
-# the 6 states, the re-injected context state included).
+# pred weight (T-1)/T = the paper runs' 1-step loss, averaged over all T window states (context state included).
 defaults:
 - base/droid
 - _self_
@@ -34,7 +33,6 @@ level1:
   wm:
     history_size: 5
     rollout_n: 1
-    nsteps: null
   loss:
     embed:
       pred:

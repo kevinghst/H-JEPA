@@ -242,15 +242,7 @@ def hjepa_forward(
                 rollout_tgt_emb,
             ) = _predict_rollouts()
         else:
-            # eb_jepa parallel unroll: the pred loss is averaged over the nsteps passes, against
-            # the full ground-truth band (the re-injected context frames included).
-            pred_passes = jepa.parallel_unroll(
-                emb,
-                act_emb,
-                int(nsteps),
-                int(wm_cfg.context_length),
-                bool(wm_cfg.get("stop_gradient", False)),
-            )
+            pred_passes = jepa.parallel_unroll(emb, act_emb, int(nsteps))
             pred_emb = pred_passes.mean(dim=0)
             tgt_emb = emb
             pred_timeline = pred_passes[-1]
@@ -279,9 +271,7 @@ def hjepa_forward(
 
             if _loss_term_enabled(component_cfg, "pred") and nsteps is not None:
                 pred_component = _split_pred_component(pred_passes, output, level, component)
-                tgt_component = component_emb
-                if wm_cfg.get("detach_pred_target", False):
-                    tgt_component = tgt_component.detach()
+                tgt_component = component_emb.detach() if wm_cfg.get("detach_pred_target") else component_emb
                 pred_loss = (
                     (pred_component - tgt_component.unsqueeze(0)).square().flatten(1).mean(dim=1).mean()
                 )
@@ -405,12 +395,11 @@ def hjepa_forward(
 def create_world_model(cfg):
     from loss import InverseDynamicsLoss, InverseDynamicsModel, SIGReg
     from models.encoders.build_encoder import build_encoder
-    from models.encoders.seq_encoder import ActionMLPEncoder, SequenceEncoder
+    from models.encoders.seq_encoder import SequenceEncoder, SequenceMLPEncoder
     from models.hjepa import HJEPA
     from models.jepa import FusionEncoder, JEPA, ProjectedEncoder, ProjectedPredictor
     from models.module import Embedder, build_projector
-    from models.predictors.causal import CausalTransformerPredictor
-    from models.predictors.predictors import ARPredictor
+    from models.predictors.predictors import ARPredictor, CausalTransformerPredictor
 
     jepas = []
     embed_dims = {}
@@ -570,7 +559,7 @@ def create_world_model(cfg):
             if action_encoder_type == "sequence":
                 action_encoder = SequenceEncoder(**action_encoder_kwargs)
             elif action_encoder_type == "mlp":
-                action_encoder = ActionMLPEncoder(
+                action_encoder = SequenceMLPEncoder(
                     temporal_stride=temporal_stride, **action_encoder_kwargs
                 )
             else:
