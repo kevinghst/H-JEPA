@@ -3,8 +3,8 @@
 data:
   dataset:
     type: droid
-    name: /mnt/vast/home/basile.terver/shared/data/DROID/droid_paths_minus16_256p.csv
-    val_name: /mnt/vast/home/basile.terver/shared/data/DROID/droid_val_indist_256p.csv
+    name: droid_paths_minus16_256p.csv
+    val_name: droid_val_indist_256p.csv
     camera_views:
     - left_mp4_path
     - right_mp4_path
@@ -20,7 +20,8 @@ data:
 quick_debug: false
 local_cache_dir: true
 output_model_name: model
-subdir: ${output_model_name}/seed${seed}
+env: droid
+subdir: ${env}/${output_model_name}/seed${seed}
 hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
   run:
     dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra

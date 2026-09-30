@@ -143,7 +143,8 @@ python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null 
 python main_hjepa.py --config-name <env>_<model> seed=<seed>
 ```
 
-A run writes to `$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/`:
+A run writes to `$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
+stable-pretraining cache `spt/` included):
 
 - `<env>_<model>_object.ckpt`: the trained model;
 - `planning_eval/epoch_XXXX/metrics.yaml`: the planning eval run at the end of training with the
@@ -159,7 +160,7 @@ Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoin
 
 ```bash
 python main_probing_decoding_eval.py --config-name <env> \
-  policy=$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+  policy=$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
 ```
 
 ### 3.5) Planning evaluation
@@ -168,7 +169,7 @@ To run a planner on a saved checkpoint:
 
 ```bash
 python eval.py --config-name <env>_<planner> seed=<seed> output.dir=<dir> \
-  policy=$STABLEWM_HOME/ckpts/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+  policy=$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
 ```
 
 The eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
@@ -202,16 +203,16 @@ for LeWM, n-level planning for H-JEPA and HWM with n levels), so the numbers com
 training:
 
 ```
-$STABLEWM_HOME/ckpts/
-  <env>_<model>/                    <env> in {ant, fourroom, cube, pusht}
-    seed<seed>/                     <model> in {lewm, hjepa_l2..4, hwm_l2..4}, <seed> in {42, 43, 44}
+$STABLEWM_HOME/ckpts/<env>/          <env> in {ant, fourroom, cube, pusht}
+  <env>_<model>/                    <model> in {lewm, hjepa_l2..4, hwm_l2..4}
+    seed<seed>/                     <seed> in {42, 43, 44}
       <env>_<model>_object.ckpt
       planning_eval/epoch_XXXX/metrics.yaml    success_rate
       final_probing_decoding_eval/
 ```
 
 `scripts/eval_depth.sh` re-runs the same evals from the saved checkpoints and writes
-`<env>_<model>/seed<seed>/eval_<planner>/metrics.yaml`.
+`<env>/<env>_<model>/seed<seed>/eval_<planner>/metrics.yaml`.
 
 | | LeWM | H-JEPA 2 | H-JEPA 3 | H-JEPA 4 | HWM 2 | HWM 3 | HWM 4 |
 |---|---|---|---|---|---|---|---|
@@ -237,7 +238,7 @@ scripts/eval_cost_ladder.sh
 `ENVS` and `SEEDS` restrict it as above. Each eval writes next to the checkpoint:
 
 ```
-$STABLEWM_HOME/ckpts/
+$STABLEWM_HOME/ckpts/<env>/
   <env>_hjepa_l<n>/                 <n> in {2, 3, 4}
     seed<seed>/
       eval_flat/metrics.yaml        native L1
@@ -313,7 +314,7 @@ so run it inside a SLURM allocation with 2 GPUs and 2 tasks per node, or submit 
 own job. `MODELS` and `SEEDS` restrict it as in §4.1. A run writes:
 
 ```
-$STABLEWM_HOME/ckpts/
+$STABLEWM_HOME/ckpts/droid/
   droid_<model>/                    <model> in {lewm, hwm_l2, hjepa_l2}
     seed<seed>/                     <seed> in {1, 1000, 10000}
       droid_<model>_object.ckpt     final model
@@ -349,7 +350,7 @@ can share one output dir.
 | H-JEPA | `droid_hjepa_l2_epoch_100_object.ckpt` | `--hier` | 4 | 0.03, 0.01 |
 
 `scripts/eval_droid.sh` runs these cells with planner seeds 1, 2 and 3 on every trained model, writes
-`droid_<model>/seed<seed>/eval_{flat,l2}/plan_seed<ps>/eval.csv` and prints the mean ± SE per model.
+`droid/droid_<model>/seed<seed>/eval_{flat,l2}/plan_seed<ps>/eval.csv` and prints the mean ± SE per model.
 The ladder of `fig:compute-pareto-real` is the same eval on the same checkpoints with
 `--num-samples`, `--lr` and `--l2-lr` swept.
 

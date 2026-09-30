@@ -86,6 +86,14 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
   Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
   names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
+  Done 2026-09-30 (next bullet).
+- 2026-09-30 run-dir layout: every run under `ckpts/<env>/` (`env` key in `base/<env>.yaml`,
+  `subdir: ${env}/${output_model_name}/seed${seed}`; `launch.py train` sweeps at `ckpts/<env>/<sweep>_<ts>/`), and
+  stable-pretraining's cache (runs/, environment*.json, heartbeat, checkpoints) in `<run_dir>/spt/` via
+  `spt.set(cache_dir=...)` in `main_hjepa.py`. `base/droid.yaml` reads the relative CSV names; `check_datasets` looks
+  them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
+  `scripts/migrate_ckpts_layout.sh` prints the `mv` + `subdir` rewrite for old-layout runs (not run on
+  Basile's or Kevin's ckpts yet).
 - Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).

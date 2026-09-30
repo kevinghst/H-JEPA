@@ -256,6 +256,7 @@ def run(cfg):
 
     ckpt_root = Path(os.getenv("STABLEWM_HOME", str(swm.data.utils.get_cache_dir()))) / "ckpts"
     run_dir = ckpt_root / run_id
+    spt.set(cache_dir=str(run_dir / "spt"))
     logging.info(f"🫆🫆🫆 Run ID: {run_id} 🫆🫆🫆")
 
     logger = None

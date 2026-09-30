@@ -8,7 +8,8 @@
   common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G (partition and account go together)
 
 train   One job per (grid cell x seed): the cartesian product of every --grid key=v1,v2 and --seeds.
-        Sweep dir $STABLEWM_HOME/ckpts/<sweep>_<YYYY-MM-DD_HH-MM>/, run dirs <sweep_dir>/<cell>/seed<S>,
+        Sweep dir $STABLEWM_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/ (<env> = the config's env key),
+        run dirs <sweep_dir>/<cell>/seed<S>,
         output_model_name = <cell>, a readable token per grid key: level2.wm.history_size=7 -> l2hs7
         (level number + initials of the last key part; full key when two tokens would collide).
         The tree (git ls-files -co --exclude-standard) is copied to <sweep_dir>/code with GIT_COMMIT,
@@ -102,7 +103,7 @@ def check_datasets(cfg: OmegaConf, home: Path) -> None:
         v = OmegaConf.select(cfg, f"data.dataset.{k}", default=None)
         if not v:
             continue
-        p = Path(v) if "/" in v or v.endswith(".csv") else home / f"{v}.h5"
+        p = home / "droid" / v if v.endswith(".csv") else home / f"{v}.h5"
         if not p.exists():
             die(f"data.dataset.{k}={v}: {p} not found")
 
@@ -220,7 +221,8 @@ def cmd_train(a, overrides: list) -> None:
         if not (sweep_dir / "code/GIT_COMMIT").exists():
             die(f"--into {sweep_dir}: not a launch.py sweep dir (no code/GIT_COMMIT)")
     else:
-        sweep_dir = home / "ckpts" / f"{a.sweep}_{datetime.now():%Y-%m-%d_%H-%M}"
+        env = compose_cfg(H / "config/train", a.config_name, overrides).env
+        sweep_dir = home / "ckpts" / env / f"{a.sweep}_{datetime.now():%Y-%m-%d_%H-%M}"
         if sweep_dir.exists():
             die(f"{sweep_dir} exists (launched this minute already?): wait a minute or use --into")
     rel = sweep_dir.relative_to(home / "ckpts")

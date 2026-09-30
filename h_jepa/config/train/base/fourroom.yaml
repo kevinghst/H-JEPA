@@ -22,7 +22,8 @@ data:
       num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
 quick_debug: false
 output_model_name: model
-subdir: ${output_model_name}/seed${seed}
+env: fourroom
+subdir: ${env}/${output_model_name}/seed${seed}
 hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
   run:
     dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
