@@ -915,7 +915,7 @@ class World:
         eval_budget: int,
         callables: list[dict] | None = None,
         dump_eval_trajs_path: str | Path | None = None,
-        load_eval_trajs_path: str | Path | None = None,
+        load_eval_trajs_path: str | Path | dict | None = None,
         process: dict[str, Any] | None = None,
         start_state_mode: str = 'dataset_full',
         goal_state_mode: str = 'dataset_full',
@@ -942,8 +942,13 @@ class World:
         ), 'env max_episode_steps must be greater than eval_budget'
 
         if load_eval_trajs_path is not None:
-            payload = torch.load(
-                Path(load_eval_trajs_path), map_location='cpu', weights_only=False
+            # a dict is a payload preloaded by the caller (chunked eval)
+            payload = (
+                load_eval_trajs_path
+                if isinstance(load_eval_trajs_path, dict)
+                else torch.load(
+                    Path(load_eval_trajs_path), map_location='cpu', weights_only=False
+                )
             )
             data = payload['data']
             columns = payload['columns']
