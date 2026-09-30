@@ -79,6 +79,13 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   use the level-2 GD settings). `eval_droid.sh` picks the config from the model name and takes `EPOCHS` / `RUNS`
   (`eval_<plan>/epoch_<N>/`, missing ckpts skipped). Open: `droid_l2.yaml` is stride 3 (horizon 12), so
   `droid_hjepa_l2_v2` (stride 2) needs a stride-2 two-level config (level 2 horizon / num_subgoals 18).
+- 2026-09-29 DROID data on HF (answers open question 10): private dataset repo `jepa-world-models/h-jepa`,
+  `droid/` = relative-path CSVs, 61 tar shards of the loader-read 256p files (`droid_256p/shard-*.tar`, 90.9 GB),
+  `droid_raw_eval16.tar` (16 raw eval episodes), `SHA256SUMS`, `extract.sh`; dataset card = repo README.md (CC BY 4.0,
+  DROID citation); packing/upload scripts in `~/shared/cc_scratch/hjepa_droid_release/`. `DROIDClipReader` resolves relative CSV names, CSV
+  entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
+  Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
+  names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
 - Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).

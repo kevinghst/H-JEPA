@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation
 import torch
 
 from stable_worldmodel.data.dataset import HDF5Dataset
+from stable_worldmodel.data.utils import get_cache_dir
 
 decord.bridge.set_bridge("native")
 
@@ -57,6 +58,8 @@ class DROIDClipReader(torch.utils.data.Dataset):
     video's resolution, actions [T, 7] pose deltas (last row zero), states [T, 7]
     cartesian_position ++ gripper_position. `frozen_clips` pins view and frame indices per clip
     (plan-eval manifest); otherwise the view and the window are drawn at random per access.
+    Relative paths (the CSV, its episode entries, the manifest's episode_path) resolve against
+    $STABLEWM_HOME/droid.
     """
 
     def __init__(
@@ -73,13 +76,14 @@ class DROIDClipReader(torch.utils.data.Dataset):
         self.fps = fps
         self.deterministic_getitem = deterministic_getitem
         self.frozen = None
+        root = get_cache_dir() / "droid"
         if frozen_clips is not None:
             with open(frozen_clips) as f:
                 self.frozen = json.load(f)
-            self.samples = [row["episode_path"] for row in self.frozen]
+            self.samples = [str(root / row["episode_path"]) for row in self.frozen]
         else:
-            with open(data_path) as f:
-                self.samples = [line.split()[0] for line in f if line.strip()]
+            with open(root / data_path) as f:
+                self.samples = [str(root / line.split()[0]) for line in f if line.strip()]
 
     def __len__(self) -> int:
         return len(self.samples)

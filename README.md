@@ -72,7 +72,7 @@ The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read fro
 | OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) |
 | Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val_2_5x}.h5`, `visual_antmaze_medium_probing_{train_2_5x,eval_explore_2_5x,eval_stitch_2_5x}.h5` | generated |
 | FourRoom Distractors | `fourroom_7_21/tp35/fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | generated |
-| DROID | `droid_paths_minus16_256p.csv`, `droid_val_indist_256p.csv` and the 256p mp4 episodes they list | download (`<LINK: DROID 256p corpus>`) |
+| DROID | `droid/droid_paths_minus16_256p.csv`, `droid/droid_val_indist_256p.csv`, the 256p mp4 episodes they list (`droid/droid_256p/`) and the 16 raw evaluation episodes (`droid/droid_raw/`) | download (HF `jepa-world-models/h-jepa`, §5.1) |
 
 **Push-T and Cube.** Follow the LeWM data instructions: `<LINK: Push-T data>`, `<LINK: Cube data>`.
 The Push-T probing config also reads a `block_ori` column (`[cos, sin]` of the block angle). If the
@@ -270,16 +270,25 @@ the three planner seeds).
 
 ### 5.1) Data
 
-DROID episodes are mp4 files decoded with `decord` (`droid_data.py`). Training reads
-`droid_paths_minus16_256p.csv`: 74,896 episodes, all of DROID 1.0.1 minus the 16 evaluation clips,
-re-encoded at 256p (`<LINK: DROID 256p corpus>`). `droid_val_indist_256p.csv` (64 episodes) is the
-validation split used for monitoring. Both CSVs list episode directories by absolute path; set them
-with `data.dataset.name` and `data.dataset.val_name` (`config/train/base/droid.yaml`).
+Download the DROID data (91 GB of tar shards, CC BY 4.0, see the dataset card) into
+`$STABLEWM_HOME/droid/` and unpack it in place:
+
+```bash
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $STABLEWM_HOME --include "droid/*"
+bash $STABLEWM_HOME/droid/extract.sh    # checks SHA256SUMS, untars the shards; --delete drops the tars
+```
+
+DROID episodes are mp4 files decoded with `decord` (`droid_data.py`), which resolves relative paths
+against `$STABLEWM_HOME/droid`. Training reads `droid_paths_minus16_256p.csv`: 74,896 episodes, all
+of DROID 1.0.1 minus the 16 evaluation clips, re-encoded at 256x256 (`droid_256p/1.0.1/...`).
+`droid_val_indist_256p.csv` (64 episodes) is the validation split used for monitoring. Both CSVs list
+episode directories relative to `$STABLEWM_HOME/droid`; set them with `data.dataset.name` and
+`data.dataset.val_name` (`config/train/base/droid.yaml`; an absolute path also works).
 
 `h_jepa/droid_assets/` holds the action/proprio normalization stats (`norm_stats_droid.json`, key
 `full_fps5`) and the evaluation-clip manifest `droid_clips_waypoint_curated16v2_5fps_gw36.json`
 (16 clips of 37 frames, goal 36 steps after the start), which reads the clips from the raw DROID
-1.0.1 release.
+1.0.1 release (`droid_raw/1.0.1/...`, 1280x720, shipped as `droid_raw_eval16.tar`).
 
 The models run at 5 fps (`data.fps: 5`, one step = 0.2 s). DROID mp4s are tagged 60 fps but hold
 15 Hz footage, so the loader keeps every 3rd frame.
