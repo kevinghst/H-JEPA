@@ -50,6 +50,22 @@ class HDF5Dataset:
                 self._cache[key] = f[key][:]
                 logging.info(f"Cached '{key}' from '{self.h5_path}'")
 
+        self._setup_levels(level1, **level_kwargs)
+
+        self.clip_indices = [
+            (ep, start)
+            for ep, length in enumerate(self.lengths)
+            if length >= self.last_level['span']
+            for start in range(length - self.last_level['span'] + 1)
+        ]
+
+        self.transform = None
+
+        if keys_to_merge:
+            for target, source in keys_to_merge.items():
+                self.merge_col(source, target)
+
+    def _setup_levels(self, level1: dict | None, **level_kwargs) -> None:
         def _normalize_level(level_cfg: dict | None, level_name: str) -> dict | None:
             if level_cfg is None:
                 return None
@@ -126,19 +142,6 @@ class HDF5Dataset:
         self.last_level['span'] = (
             required_level1_frames * self.level1['frameskip']
         )
-
-        self.clip_indices = [
-            (ep, start)
-            for ep, length in enumerate(self.lengths)
-            if length >= self.last_level['span']
-            for start in range(length - self.last_level['span'] + 1)
-        ]
-
-        self.transform = None
-
-        if keys_to_merge:
-            for target, source in keys_to_merge.items():
-                self.merge_col(source, target)
 
     @property
     def column_names(self) -> list[str]:

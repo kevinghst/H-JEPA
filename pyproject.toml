@@ -27,6 +27,7 @@ dependencies = [
   "gymnasium",
   "einops",
   "h5py",
+  "scipy",
   "hdf5plugin",
   "tqdm",
   "gdown",
@@ -37,10 +38,13 @@ dependencies = [
 [project.optional-dependencies]
 train = [
     "transformers>=4.50.0",
-    "stable-pretraining",
+    "stable-pretraining==0.1.7",  # training only; main_hjepa.ResumableManager needs 0.1.7
+    "lightning>=2.5",
+    "torchmetrics",
     "hydra-core",
     "hydra-submitit-launcher",
     "wandb",
+    "decord",
 ]
 
 env = [

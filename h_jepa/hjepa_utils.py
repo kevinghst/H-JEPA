@@ -90,12 +90,19 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
         emb = output[f"embed_{level}"]
         act_emb = output[f"action_{level}"]
 
-        teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
-        if rollout_n == 1:
+        nsteps = level_cfg.wm.get("nsteps", None)
+        if nsteps is not None:
+            pred_passes = jepa.parallel_unroll(emb, act_emb, int(nsteps))
+            pred_emb = pred_passes.mean(dim=0)
+            tgt_emb = emb
+            output[f"pred_embed_{level}"] = pred_passes[-1]
+        elif rollout_n == 1:
+            teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
             pred_emb = teacher_pred
             tgt_emb = emb[:, 1 : history_size + 1]
             output[f"pred_embed_{level}"] = torch.cat([emb[:, :1], teacher_pred], dim=1)
         else:
+            teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
             rollout = emb[:, :history_size]
             for step in range(rollout_n):
                 pred_step = jepa.predict(
@@ -119,7 +126,17 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
             component_emb = output[_component_key(component, level)]
             component_loss = None
 
-            if _loss_term_enabled(component_cfg, "pred"):
+            if _loss_term_enabled(component_cfg, "pred") and nsteps is not None:
+                pred_component = _pred_component(pred_passes, output, level, component)
+                tgt_component = (
+                    component_emb.detach() if level_cfg.wm.get("detach_pred_target") else component_emb
+                )
+                pred_loss = (
+                    (pred_component - tgt_component.unsqueeze(0)).square().flatten(1).mean(dim=1).mean()
+                )
+                output[_component_loss_key("pred", component, level_suffix)] = pred_loss
+                component_loss = _loss_term_weight(component_cfg, "pred") * pred_loss
+            elif _loss_term_enabled(component_cfg, "pred"):
                 teacher_forcing_loss = F.mse_loss(
                     _pred_component(teacher_pred, output, level, component),
                     component_emb[:, 1 : history_size + 1],
@@ -158,6 +175,20 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
             output[f"{component}_loss{level_suffix}"] = component_loss
             level_loss = component_loss if level_loss is None else level_loss + component_loss
 
+        action_sigreg_coeff = float(level_cfg.get("action_sigreg_coeff", 0.0))
+        if action_sigreg_coeff > 0:
+            action_sigreg_loss = getattr(self, _sigreg_module_name("action", level))(
+                act_emb[:, : emb.size(1) - 1].transpose(0, 1)
+            )
+            output[_component_loss_key("sigreg", "action", level_suffix)] = action_sigreg_loss
+            level_loss = level_loss + action_sigreg_coeff * action_sigreg_loss
+
+        idm_coeff = float(level_cfg.get("idm_coeff", 0.0))
+        if idm_coeff > 0:
+            idm_loss = jepa.idm_loss_fn(emb, act_emb)
+            output[f"idm_loss{level_suffix}"] = idm_loss
+            level_loss = level_loss + idm_coeff * idm_loss
+
         if level_loss is None:
             continue
         output[f"loss{level_suffix}"] = level_loss
@@ -174,13 +205,13 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
 
 
 def create_world_model(cfg):
-    from loss import SIGReg
+    from loss import InverseDynamicsLoss, InverseDynamicsModel, SIGReg
     from models.encoders.build_encoder import build_encoder
-    from models.encoders.seq_encoder import SequenceEncoder
+    from models.encoders.seq_encoder import SequenceEncoder, SequenceMLPEncoder
     from models.hjepa import HJEPA
     from models.jepa import FusionEncoder, JEPA, ProjectedEncoder, ProjectedPredictor
     from models.module import Embedder, build_projector
-    from models.predictors.predictors import ARPredictor
+    from models.predictors.predictors import ARPredictor, CausalTransformerPredictor
 
     jepas = []
     embed_dims = {}
@@ -264,35 +295,46 @@ def create_world_model(cfg):
         embed_dims[level] = embed_dim
 
         predictor_cfg = dict(level_cfg.predictor)
-        predictor_projector_cfg = predictor_cfg.pop("projector")
-        predictor = ProjectedPredictor(
-            ARPredictor(
-                num_frames=level_cfg.wm.history_size,
-                input_dim=embed_dim,
-                output_dim=hidden_dim,
-                **predictor_cfg,
-            ),
-            build_projector(
-                predictor_projector_cfg,
-                input_dim=hidden_dim,
-                output_dim=embed_dim,
-            ),
-        )
+        if predictor_cfg.pop("type", None) == "causal_transformer":
+            predictor = CausalTransformerPredictor(input_dim=embed_dim, **predictor_cfg)
+        else:
+            predictor_projector_cfg = predictor_cfg.pop("projector")
+            predictor = ProjectedPredictor(
+                ARPredictor(
+                    num_frames=level_cfg.wm.history_size,
+                    input_dim=embed_dim,
+                    output_dim=hidden_dim,
+                    **predictor_cfg,
+                ),
+                build_projector(
+                    predictor_projector_cfg,
+                    input_dim=hidden_dim,
+                    output_dim=embed_dim,
+                ),
+            )
 
         action_encoder = None
         queue_size = 0
         if "action_encoder" in level_cfg:
             action_encoder_kwargs = dict(level_cfg.action_encoder)
             queue_size = int(action_encoder_kwargs.pop("queue_size", 0))
-            action_encoder = SequenceEncoder(**action_encoder_kwargs)
+            if action_encoder_kwargs.pop("type", "sequence") == "mlp":
+                action_encoder = SequenceMLPEncoder(
+                    temporal_stride=int(level_cfg.get("stride", 1)), **action_encoder_kwargs
+                )
+            else:
+                action_encoder = SequenceEncoder(**action_encoder_kwargs)
 
         action_embed_kwargs = dict(level_cfg.get("action_embed", {}))
-        if level == 1:
-            action_embed_kwargs["input_dim"] = (
-                cfg.data.dataset.level1.frameskip * cfg.level1.wm.action_dim
-            )
-        action_embed_kwargs["emb_dim"] = embed_dim
-        action_embed = Embedder(**action_embed_kwargs)
+        if action_embed_kwargs.pop("type", None) == "identity":
+            action_embed = torch.nn.Identity()
+        else:
+            if level == 1:
+                action_embed_kwargs["input_dim"] = (
+                    cfg.data.dataset.level1.frameskip * cfg.level1.wm.action_dim
+                )
+            action_embed_kwargs["emb_dim"] = embed_dim
+            action_embed = Embedder(**action_embed_kwargs)
 
         jepa = JEPA(
             encoder=encoder,
@@ -305,6 +347,15 @@ def create_world_model(cfg):
             temporal_window_size=int(level_cfg.get("window_size", 1)),
             target_length=target_length,
         )
+
+        if float(level_cfg.get("idm_coeff", 0.0)) > 0:
+            jepa.idm_loss_fn = InverseDynamicsLoss(
+                InverseDynamicsModel(
+                    state_dim=embed_dim,
+                    hidden_dim=int(level_cfg.idm.hidden_dim),
+                    action_dim=int(level_cfg.predictor.action_dim),
+                )
+            )
 
         jepas.append(jepa)
 
@@ -324,5 +375,7 @@ def create_world_model(cfg):
                 k: v for k, v in sigreg_cfg.items() if k not in {"enabled", "weight"}
             }
             losses[_sigreg_module_name(component, level)] = SIGReg(**sigreg_kwargs)
+        if float(level_cfg.get("action_sigreg_coeff", 0.0)) > 0:
+            losses[_sigreg_module_name("action", level)] = SIGReg()
 
     return world_model, losses, embed_dims

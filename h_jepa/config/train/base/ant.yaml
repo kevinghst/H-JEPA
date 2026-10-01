@@ -27,7 +27,11 @@ data:
       frameskip: 5
       num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
 output_model_name: model
-subdir: ${output_model_name}/seed${seed}
+env: ant
+subdir: ${env}/${output_model_name}/seed${seed}
+hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
+  run:
+    dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
 quick_debug: false
 num_workers: 6
 seed: 42
@@ -36,6 +40,7 @@ patch_size: 4
 encoder_scale: tiny
 dump_object: true
 save_every_n_epochs: 2
+resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
 max_train_batches_total: null
 trainer:
   max_epochs: 5

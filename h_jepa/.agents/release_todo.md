@@ -42,6 +42,20 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 10. Ant probing now uses one concatenated eval set, so the paper's Ant probe numbers (depth-probes
    figure, probing tables; `main.tex` probing-data caption says "averaged over both") are not
    reproduced exactly. Re-run the Ant probing evals and regenerate the figures, or accept the gap?
+11. DROID data hosting and license: the 256p re-encoded corpus (`droid_paths_minus16_256p.csv`,
+    `droid_val_indist_256p.csv` and their mp4 episodes; README `<LINK: DROID 256p corpus>`). The
+    CSVs list absolute paths under `/mnt/vast/home/basile.terver/shared/data/DROID/droid_256p/`,
+    `config/train/base/droid.yaml` hardcodes the CSV paths, and the clip manifest points into the raw
+    release (`/mnt/vast/datasets/DROID/droid_raw/1.0.1/`). Where to host, and may a re-encoded DROID
+    be redistributed?
+12. `fig:compute-pareto-real` TFLOPs axis: the original code measured it with `FlopCounterMode`; not ported.
+    The release ships the skill-vs-(S, η) ladder only. Port the measurement or drop the axis from the
+    reproduced claims?
+13. DROID planner-seed reporting: the README reports mean ± SE over train seeds, each the mean over
+    planner seeds 1/2/3 (`eval_droid.sh`). The planner-seed spread is ±4 points at S=4. Keep this, or
+    report the SE over all 9 train x planner seeds?
+14. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
+    `h_jepa/assets/` symlink that holds the simulation eval tasks. Keep the separate tracked dir?
 
 ## Pending work
 
@@ -57,6 +71,48 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `eval_cost_ladder.sh`, ~250 SLURM jobs) against the README reference tables. Only `fourroom_l3`
   seed 42 checked so far (98% = paper). Needs the user's go-ahead.
 - Optionally one training reproduction per env.
+- DROID reproduction pass: `ENVS=droid train_all.sh` (9 runs) + `eval_droid.sh` (27 evals), then fill the
+  README "This release" column. Its multi-GPU `srun` launch has not been run yet.
+- 2026-09-28: `config/train/droid_lewm_v2.yaml` added: the v2 flat recipe
+  (`headlinev2top6_fps20_cls_flat_nf6_NSTEPS1_ep150`): 6-frame clips, gradient through the prediction target,
+  150 epochs x 292 batches, save every 10 epochs. Since 2026-09-30 in the native form (history_size 5 + rollout_n 1,
+  pred weight 5/6; was history_size 1 + rollout_n 5 + nsteps 1, see Round 6). Being
+  cross-validated (level-1 idm_coeff {25,50,100,200} x SIGReg weight {0.04,0.08,0.16,0.32}, seed 1,
+  planned at epoch 100). Not yet in README / provenance; keep or drop depending on the result.
+- 2026-09-28: `config/train/droid_hjepa_l{2,3,4}_v2.yaml` added: the v2-top6 CLS recipe
+  (`headlinev2top6_fps20_cls_e2e{2,3,4}lvl_nf{11,21,41}_crop6_ipe{277,248,192}_NSTEPS1_ep150`): stride 2 / window 1 at
+  every upper level, every level history_size 5 + rollout_n 1 = 6 states (Kevin's per-level crop; top level uncropped)
+  with pred weight 5/6 (= the source runs' nsteps-1 parallel unroll loss, which averages over the 6 states: per-level loss |d| 0,
+  grad cosine 1.0 at 2/3/4 levels), 150 epochs x round(292 W(n)/W(6)) = 277 / 248 / 192 batches. `DROIDDataset` now takes any
+  `levelN` (level setup shared with `HDF5Dataset`). Kevin's crop also runs at validation (the original code crops in training
+  only); left as is. Seed 1 training; not yet in README / provenance.
+- 2026-09-28 DROID plan-eval at any depth: `droid_plan_eval.py --config droid_{flat,l2,l3,l4}` (replaces `--hier`);
+  `--lr` / `--num-samples` take one value per level, the last one repeated upwards (`--lr 0.03 0.01` = old
+  `--lr 0.03 --l2-lr 0.01`). `droid_l3/l4.yaml` are stride 2 (horizons 36/18/9/4, num_subgoals = horizon, levels 3/4
+  use the level-2 GD settings). `eval_droid.sh` picks the config from the model name and takes `EPOCHS` / `RUNS`
+  (`eval_<plan>/epoch_<N>/`, missing ckpts skipped). Open: `droid_l2.yaml` is stride 3 (horizon 12), so
+  `droid_hjepa_l2_v2` (stride 2) needs a stride-2 two-level config (level 2 horizon / num_subgoals 18).
+- 2026-09-29 DROID data on HF (answers open question 10): private dataset repo `jepa-world-models/h-jepa`,
+  `droid/` = relative-path CSVs, 61 tar shards of the loader-read 256p files (`droid_256p/shard-*.tar`, 90.9 GB),
+  `droid_raw_eval16.tar` (16 raw eval episodes), `SHA256SUMS`, `extract.sh`; dataset card = repo README.md (CC BY 4.0,
+  DROID citation); packing/upload scripts in `~/shared/cc_scratch/hjepa_droid_release/`. `DROIDClipReader` resolves relative CSV names, CSV
+  entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
+  Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
+  names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
+  Done 2026-09-30 (next bullet).
+- 2026-09-30 run-dir layout: every run under `ckpts/<env>/` (`env` key in `base/<env>.yaml`,
+  `subdir: ${env}/${output_model_name}/seed${seed}`; `launch.py train` sweeps at `ckpts/<env>/<sweep>_<ts>/`), and
+  stable-pretraining's cache (runs/, environment*.json, heartbeat, checkpoints) in `<run_dir>/spt/` via
+  `spt.set(cache_dir=...)` in `main_hjepa.py`. `base/droid.yaml` reads the relative CSV names; `check_datasets` looks
+  them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
+  Old-layout runs (`ckpts/<env>_<model>/`) move with `mv` + a `subdir: <env>/...` rewrite in their `config.yaml`
+  (Basile's DROID runs moved 2026-09-30; Kevin's to do, not part of the release).
+- 2026-09-30 fix D1 (level-2 action SIGReg): with T level-2 states the loader builds T action chunks, the last one
+  padded past the clip end (a transition that does not exist); predictor and IDM used the first T-1, the action
+  SIGReg used all T. `hjepa_forward` now applies it to `act_emb[:, : T - 1]` as the original code did. Gates: every
+  loss term and module gradient matches the original code within 1.2e-6 relative (eb H-JEPA seed-1 e-100 weights);
+  flat forward and Cube (no action SIGReg) unchanged bitwise; `droid_hjepa_l2` / `droid_hwm_l2` change only
+  `sigreg_loss_action_level2`. DROID HWM / H-JEPA l2 fleets retrained with it (`droid_{hwm,hjepa}_l2_n1fix`).
 - Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).
@@ -73,6 +129,26 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 - Config equivalence (`verify_train.py`, `verify_eval.py`), seeded training step (`fwd_test.py`,
   bit-identical to the pre-cleanup code) and Cube evals (bit-identical) after both feature-removal
   rounds; smoke runs of training + end-of-training planning + probing passed.
+
+- DROID port (2026-09-28): models max|d| = 0 vs the reference port (source-run weights); data pipeline
+  bitwise-identical; planner unit check passed; eval-only reproduction on the source-run weights within
+  planner-seed noise (flat 31.9 / 34.5 / 32.4 vs original code 35.9 / 32.2 / 31.2).
+- 2026-09-28 DROID plan-eval on the refactored hierarchical solver (9158935): `droid_plan_eval.py` imports
+  `build_hierarchical_solver` (renamed) and passes `steps_taken=0` (now required by `solve()`). `droid_*.yaml` unchanged.
+  e2e gate on the converted reference ckpts: flat and hier `eval.csv` string-identical to the pre-refactor port
+  (flat ATE 0.2490 / Fréchet mean 0.2972 / median 0.4134; hier 0.3205 / 0.2072 / 0.3870).
+- 2026-09-28: `main_hjepa.py` passed `<name>_weights.ckpt` to `spt.Manager` unconditionally; stable-pretraining raises
+  `FileNotFoundError` when it is absent, so fresh non-`quick_debug` runs could not start. Now passed only when the file exists.
+  `decord` (DROID mp4 decoding) moved from the dev group into the `train` extra.
+- 2026-09-28 DROID e2e H-JEPA vs original-code seed-1 loss trajectories (1.5k-step bins, 6k-29.5k steps): every component within
+  ~5-8 %, LR identical at matched steps. Two residual differences: (i) the original cosine floors at `min_lr 1e-5`, spt's anneals to 0
+  (only the last ~1 % of the schedule; matters for flat's e-100 = end of schedule); (ii) level-2 IDM raw loss drifts ~10-13 %
+  BELOW the original after ~24k steps in both ports (pulls total loss ~5 % low). Neither explains the H-JEPA fidelity gap (34 vs 40 on
+  one train seed); seeds 1000/10000 decide.
+- 2026-09-29 DROID rate renamed to its true 5 fps: `data.fps: 5` (the loader strides by `ceil(tag / (4 fps))`,
+  DROID mp4s being tagged 60 fps for 15 Hz footage), norm-stats key `full_fps5`, manifest
+  `droid_clips_waypoint_curated16v2_5fps_gw36.json`, default tag `wp_5fps_gw36_cur16v2`. Data gate vs the reference
+  (fps 20 / `full_fps20`) 42/42 equal, e2e plan-eval eval.csv byte-identical (flat, hier).
 
 ## Removed features
 
@@ -183,8 +259,7 @@ Round 4
 
 Round 5
 - Ant on-the-fly 50/50 explore/stitch mixing (`MixedHDF5Dataset`, `_select_mixed_episode_subsets`,
-  the `get_col_stats` branches, config keys `sources` / `mix_mode` / `subset_unit` and the train
-  `total_transitions`). Ant trains on `visual_antmaze_medium_explore_stitch_train.h5`, built
+  config keys `sources` / `mix_mode` / `subset_unit` and the train `total_transitions`). Ant trains on `visual_antmaze_medium_explore_stitch_train.h5`, built
   (2026-09-29) from the seed-42 selection: all 12,500 explore episodes + 12,500 of the 31,250 stitch
   episodes, columns `pixels action xy qpos qvel proprio` (+ episode index columns). Seeds 43/44 now
   train on the seed-42 subset instead of their own. The collection configs
@@ -206,8 +281,38 @@ Round 5
   rollout_n 2-3 (incl. history_size 1), pixel/proprio components, the legacy flat format and a
   disabled pred term.
 
+Round 6 (2026-09-30, Kevin's PR review)
+- nsteps-1 parallel unroll: every nsteps-1 level is now Kevin's native form (history_size T-1, rollout_n 1,
+  `loss.embed.pred.weight` (T-1)/T, same T): `droid_hwm_l2` level 1 (7, 1, 7/8) and level 2 (2, 1, 2/3),
+  `droid_hjepa_l2` level 2 (2, 1, 2/3), `droid_lewm_v2` (5, 1, 5/6); the `droid_hjepa_l{2,3,4}_v2` `nsteps: null`
+  overrides went with it. Old (HEAD code, nsteps 1) vs new (native x weight) on one real DROID batch, same weights:
+  weighted pred loss |d| <= 2e-8 and `loss_levelN` |d| 0 at every level, grad cosine 1.000000000. Level-2 no-grad metrics
+  (`mse_loss`, `l1_loss`, `dim_*`) and the unweighted `pred_loss_level2` now follow the native form (T-1 targets).
+- `wm.context_length` / `wm.stop_gradient` (1 / true in every recipe) and their plumbing; `JEPA.parallel_unroll`
+  hardcodes both. `nsteps: 2` moved from `base/droid.yaml` to the two configs that use it (`droid_lewm`,
+  `droid_hjepa_l2` level 1); `wm.detach_pred_target` is read only in the nsteps branch and set only in `droid_lewm`
+  (true). Forward gate vs the source dumps max|d| 0 (flat; l2s on every level-1 key and on `loss_level2` / `loss`),
+  Cube regress unchanged. Old run configs with `nsteps: 1` still run the parallel unroll (1 pass, same loss).
+- renames: `ActionMLPEncoder` -> `SequenceMLPEncoder` (config type stays `mlp`), `HJEPAModule` -> `GradClipModule`;
+  `models/predictors/causal.py` merged into `predictors.py`. Existing `*_object.ckpt` pickling
+  `models.predictors.causal.*` or `ActionMLPEncoder` no longer unpickle (state_dict keys unchanged: re-save them
+  through a module/class-renaming unpickler, or rebuild from the config and load the state_dict).
+- mentions of the original training code by name in code, configs and docs (`provenance.md` keeps the source-run paths).
+
+DROID (not ported from the original code)
+- decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;
+  `tab:sf-idm0`; varcomp; selective-bars; the TFLOPs measurement of `fig:compute-pareto-real`
+  (`FlopCounterMode`)
+
 ## Kept on purpose
 
+- `droid_data.py`: the one non-HDF5 loader. DROID episodes are the 256x256 mp4s, decoded with `decord`.
+  `DROIDDataset(HDF5Dataset)` reuses `HDF5Dataset._setup_levels` (level configs and span, hoisted out of
+  `HDF5Dataset.__init__`, Kevin's behaviour unchanged) and the inherited `__getitem__` / `load_chunk` /
+  `_load_slice_with_levels`; it overrides only `_load_slice` (one random view and `span`-frame window per
+  episode per access, via `DROIDClipReader`, as in the original loader: one index per episode, not per window) and the
+  precomputed `get_col_stats` / `get_dim`. `lengths` (span per episode) only feeds the normalizer-artifact count.
+  No resize: the files are already `img_size` (dataset `img_size` key removed from `base/droid.yaml`).
 - latent action queue (queue_size): GradientSolver's upper-level action prior and clipping.
 - action_embed.patch_embed: level 1 uses the Embedder default (True); levels 2+ set false.
 - window_size > 1 in training and planning (unused by the paper, 1 everywhere, but must keep
@@ -217,9 +322,10 @@ Round 5
   the solver's window padding and `_latest_context_window`, and the dense
   `sparse_level1_encode=False` path + `unit_tests/test_sparse_level1_encode.py`, which checks the
   sparse encode for window 1-3.
-- multi-step rollout loss, pixel/proprio loss components and the
-  legacy flat loss format, intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per
-  request).
+- multi-step rollout loss (`rollout_n` > 1), the nsteps > 1 parallel unroll (`JEPA.parallel_unroll`: level 1 of
+  `droid_lewm` / `droid_hjepa_l2`, `wm.nsteps: 2`; context 1 frame and stop-gradient between passes, both fixed;
+  `wm.detach_pred_target` only there), pixel/proprio loss components and the legacy flat loss format,
+  intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per request).
 - `JEPA.__setstate__` `temporal_kernel_size` -> `temporal_window_size` shim: the four LeWM paper
   checkpoints (level 1, all seeds) still carry the old attribute (the audit wrongly listed it as unused).
 - `JEPA.__setstate__` action-module shim: modules were renamed on 2026-09-28 (`action_encoder` ->

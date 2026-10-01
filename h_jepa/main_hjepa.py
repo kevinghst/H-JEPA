@@ -23,10 +23,12 @@ from utils import (
     ModelObjectCallBack,
     DebugArtifactCleanupCallback,
     PlanningEvalCallback,
+    ResumeCheckpoint,
     TrainBatchLimitCallback,
 )
 from final_probing_decoding_eval import FinalProbingDecodingEvalCallback
 from data import (
+    Compose,
     build_normalizer_artifact,
     build_hdf5_dataset,
     get_column_normalizer,
@@ -42,8 +44,50 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
+class GradClipModule(spt.Module):
+    def clip_gradients(self, optimizer, gradient_clip_val=None, gradient_clip_algorithm=None):
+        if not self._train_cfg.get("grad_clip_per_level", False):
+            return super().clip_gradients(optimizer, gradient_clip_val, gradient_clip_algorithm)
+        # grad_clip_per_level: each param group (level{N}) gets its own norm budget.
+        for group in optimizer.param_groups:
+            params = [p for p in group["params"] if p.grad is not None]
+            if params:
+                torch.nn.utils.clip_grad_norm_(params, float(gradient_clip_val))
+
+
+class ResumableManager(spt.Manager):
+    """spt.Manager that resumes from the run dir's `ResumeCheckpoint` file.
+
+    With `resume_file` set, any start (new job id or SLURM requeue) loads it with full state
+    when it exists and otherwise starts fresh (from `ckpt_path` if given). spt's own requeue
+    index is never used then: it is keyed by SLURM job id, so a second run inside the same job
+    would restore the first run's state. With `resume_file=None`, spt decides, except that a
+    requeue preempted before spt's first epoch-end checkpoint starts fresh instead of raising.
+    """
+
+    def __init__(self, *args, resume_file: Path | None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.resume_file = None if resume_file is None else Path(resume_file)
+
+    def _resolve_load_path(self, run_dir):
+        if self.resume_file is not None:
+            if self.resume_file.is_file():
+                logging.info(f"Resuming full training state from {self.resume_file}")
+                return str(self.resume_file), False
+            logging.info(f"No resume file at {self.resume_file}; starting from ckpt_path={self.ckpt_path}")
+            return (str(self.ckpt_path), self.weights_only) if self.ckpt_path else (None, None)
+        try:
+            return super()._resolve_load_path(run_dir)
+        except RuntimeError as e:
+            if "no last.ckpt" not in str(e):
+                raise
+            logging.warning(f"Requeue with nothing to resume from; starting fresh ({e})")
+            return None, None
+
+
 def _build_hjepa_optimizer_factory(model, cfg):
     optimizer_cfg = OmegaConf.to_container(cfg.optimizer, resolve=True)
+    optimizer_cfg.pop("warmup_ratio", None)
 
     def optimizer_factory(params):
         param_groups = []
@@ -126,7 +170,7 @@ def run(cfg):
 
     val_dataset_cfg = {
         k: v for k, v in dataset_cfg.items()
-        if k != "total_transitions"
+        if k not in ("total_transitions", "data_path")
     }
     val_dataset_cfg["name"] = val_name
     if val_total_transitions is not None:
@@ -139,7 +183,7 @@ def run(cfg):
         for col in cfg.data.dataset.keys_to_load
         if not col.startswith("pixels")
     ]
-    transform = spt.data.transforms.Compose(*extra_transforms)
+    transform = Compose(*extra_transforms)
     train_dataset.transform = transform
     val_dataset.transform = transform
 
@@ -167,16 +211,31 @@ def run(cfg):
 
     optimizers = {}
     hjepa_optimizer = _build_hjepa_optimizer_factory(world_model, cfg)
+    scheduler = {"type": "LinearWarmupCosineAnnealingLR"}
+    warmup_ratio = cfg.optimizer.get("warmup_ratio", None)
+    if warmup_ratio is not None:
+        def scheduler(optimizer, module):
+            total_steps = int(module.trainer.estimated_stepping_batches)
+            return spt.optim.create_scheduler(
+                optimizer,
+                {
+                    "type": "LinearWarmupCosineAnnealingLR",
+                    "warmup_steps": max(1, round(float(warmup_ratio) * total_steps)),
+                    "max_steps": total_steps,
+                },
+                module,
+            )
+
     for model_name in models.keys():
         optimizers[f"{model_name}_opt"] = {
             "modules": str(model_name),
             "optimizer": hjepa_optimizer,
-            "scheduler": {"type": "LinearWarmupCosineAnnealingLR"},
+            "scheduler": scheduler,
             "interval": "epoch",
         }
 
     data_module = spt.data.DataModule(train=train, val=val)
-    world_model = spt.Module(
+    world_model = GradClipModule(
         **models,
         **losses,
         forward=partial(_hjepa_training_forward, cfg=cfg),
@@ -197,6 +256,7 @@ def run(cfg):
 
     ckpt_root = Path(os.getenv("STABLEWM_HOME", str(swm.data.utils.get_cache_dir()))) / "ckpts"
     run_dir = ckpt_root / run_id
+    spt.set(cache_dir=str(run_dir / "spt"))
     logging.info(f"🫆🫆🫆 Run ID: {run_id} 🫆🫆🫆")
 
     logger = None
@@ -276,9 +336,14 @@ def run(cfg):
                     )
                 )
 
+    resume_file = run_dir / "lightning_resume" / "last.ckpt"
+    resume_every = cfg.get("resume_every_n_steps", 2000)
+    resume_callbacks = [ResumeCheckpoint(resume_file, resume_every)] if resume_every else []
+
     trainer = pl.Trainer(
         **cfg.trainer,
         callbacks=[
+        *resume_callbacks,
         debug_cleanup_callback,
         train_batch_limit_callback,
         object_dump_callback,
@@ -291,11 +356,12 @@ def run(cfg):
         enable_checkpointing=False,
     )
 
-    manager_ckpt_path = None
-    if not cfg.get("quick_debug", False):
-        manager_ckpt_path = run_dir / f"{cfg.output_model_name}_weights.ckpt"
+    manager_ckpt_path = run_dir / f"{cfg.output_model_name}_weights.ckpt"
+    if cfg.get("quick_debug", False) or not manager_ckpt_path.exists():
+        manager_ckpt_path = None
 
-    manager = spt.Manager(
+    manager = ResumableManager(
+        resume_file=resume_file if resume_every else None,
         trainer=trainer,
         module=world_model,
         data=data_module,

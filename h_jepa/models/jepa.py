@@ -371,6 +371,20 @@ class JEPA(nn.Module):
         """
         return self.predictor(emb, act_emb)
 
+    def parallel_unroll(self, emb, act_emb, nsteps):
+        """nsteps passes over the band: each pass predicts frames 1..T-1 from the previous pass (the
+        encoder band on pass 0, detached after), with ground-truth frame 0 re-injected on the left.
+        Returns every pass stacked: (nsteps, B, T, D), aligned with emb.
+        """
+        T = emb.size(1) - 1
+        pred_input = emb[:, :T]
+        passes = []
+        for _ in range(nsteps):
+            predicted = torch.cat([emb[:, :1], self.predict(pred_input, act_emb[:, :T])], dim=1)
+            passes.append(predicted)
+            pred_input = torch.cat([emb[:, :1], predicted[:, 1:T].detach()], dim=1)
+        return torch.stack(passes)
+
     def rollout(self, info, action_sequence, history_size: int = 1):
         """Rollout the model given an initial info dict and action sequence."""
 
@@ -383,7 +397,8 @@ class JEPA(nn.Module):
 
         _init = {k: v[:, 0] for k, v in info.items() if torch.is_tensor(v)}
         if "embed_0" not in _init:
-            _init = self.encode(_init)
+            with torch.no_grad():
+                _init = self.encode(_init)
         emb = info["embed_0"] = _init["embed_0"].unsqueeze(1).expand(B, S, -1, -1)
         _init = {k: detach_clone(v) for k, v in _init.items()}
 
@@ -450,9 +465,11 @@ class JEPA(nn.Module):
                     _goal[k[len("goal_") :]] = _goal.pop(k)
 
             _goal.pop("action")
-            _goal = self.encode(_goal)
+            with torch.no_grad():
+                _goal = self.encode(_goal)
 
-            info_dict["goal_embed_0"] = _goal["embed_0"]
+            # keep the sample axis, (B, 1, T, D): expand_as against (B, S, W, D) is wrong for B > 1
+            info_dict["goal_embed_0"] = _goal["embed_0"].unsqueeze(1)
 
         info_dict = self.rollout(info_dict, action_candidates)
 
