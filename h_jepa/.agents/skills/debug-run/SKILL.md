@@ -11,10 +11,10 @@ data and eval behavior, not to side effects: always redirect W&B and outputs to 
 locations. Append the debug overrides after the user's command so Hydra's last-value-wins makes
 them take precedence.
 
-Run everything from `/mnt/vast/home/kevin/H-JEPA/h_jepa` with
+Run everything from `$REPO/h_jepa` with
 
 ```bash
-export PYTHONPATH=/mnt/vast/home/kevin/H-JEPA:/mnt/vast/home/kevin/H-JEPA/h_jepa
+export PYTHONPATH=$REPO:$REPO/h_jepa
 ```
 
 (the conda env has the development repo's `stable_worldmodel` installed; this makes Python import
@@ -50,7 +50,7 @@ loader.persistent_workers=false
    plain `eval.*` overrides do not reach it). Use `++` so it works whether or not the key exists:
 
 ```bash
-++planning_eval.overrides.eval.num_eval=1
+++planning_eval.overrides.eval.num_eval=1    # DROID configs (droid_*): num_eval=1
 ```
 
    Optionally shrink the solver, matching its shape in the eval config: flat configs
@@ -88,7 +88,7 @@ Keep the command's `policy`, config, eval tasks, dataset and callables; only shr
 
 ```bash
 output.dir=$(mktemp -d)/planning_eval
-eval.num_eval=1
+eval.num_eval=1    # DROID configs (droid_*): num_eval=1
 ```
 
 and optionally the solver (flat: `solver.n_steps=10 solver.num_samples=32`; hierarchical:

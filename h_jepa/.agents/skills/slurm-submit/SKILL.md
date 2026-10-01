@@ -6,7 +6,7 @@ description: Submit one or more shell commands (training, planning eval, probing
 # SLURM Submit
 
 Submit commands through `.agents/skills/slurm-submit/run.sbatch` (in this skill's folder). The
-script requests 1 GPU / 10 CPUs / 100G / 48h on `open_research`, sets `PYTHONPATH` to the code
+script requests 1 GPU / 10 CPUs / 100G / 48h on `<partition>` (edit the `#SBATCH` lines for your cluster), sets `PYTHONPATH` to the code
 root (so this repo's `stable_worldmodel` is imported), `cd`s into `<code_root>/h_jepa`, sets the
 MuJoCo/EGL and threading env, and `eval`s each command string in order.
 
@@ -21,17 +21,17 @@ this only if the request already says to submit without asking.
 Submit from `h_jepa/` so `logs/%j.out` / `logs/%j.err` land in `h_jepa/logs/`:
 
 ```bash
-cd /mnt/vast/home/kevin/H-JEPA/h_jepa
+cd $REPO/h_jepa
 mkdir -p logs
 sbatch .agents/skills/slurm-submit/run.sbatch "<command>"
 ```
 
 - One `sbatch` call is one job; several command strings in one call run sequentially in that job.
-  Submit one call per command to run them in parallel.
+  Submit one call per command to run them in parallel. Training, resume and eval sweeps normally go through `launch.py` (it submits itself; logs in `<run_dir>/slurm/`); this skill is for one-off commands.
 - Commands run with cwd `h_jepa/`. Scripts outside it (e.g. `scripts/data/*.py` at the repo root)
   need absolute paths.
 - Hydra scripts take `--config-name <stem>`, resolved against the script's own config dir.
-- CPU-only jobs (data collection, analysis): `sbatch --partition=cpu --gres=none .agents/skills/slurm-submit/run.sbatch "<command>"`.
+- CPU-only jobs (data collection, analysis): `sbatch --partition=<cpu partition> --gres=none .agents/skills/slurm-submit/run.sbatch "<command>"`.
   CLI flags override the in-script `#SBATCH` lines. Say "0 GPU / cpu partition" in the preview.
 
 ## Training runs: snapshot the code
@@ -41,11 +41,11 @@ requeued job reads the live repo and the code has changed, the resume can fail. 
 a training command, copy the code once and pass the snapshot as the first argument:
 
 ```bash
-cd /mnt/vast/home/kevin/H-JEPA
-SNAP=/mnt/vast/home/kevin/H-JEPA_slurm_snapshots/$(date +%Y%m%d_%H%M%S)
+cd $REPO
+SNAP=${REPO}_slurm_snapshots/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$SNAP"
 git ls-files -co --exclude-standard | rsync -a --files-from=- . "$SNAP"
-ln -sfn /mnt/vast/home/kevin/H-JEPA/h_jepa/assets "$SNAP/h_jepa/assets"
+ln -sfn $REPO/h_jepa/assets "$SNAP/h_jepa/assets"
 git rev-parse HEAD > "$SNAP/GIT_COMMIT"
 git status --short > "$SNAP/GIT_STATUS"
 git diff HEAD > "$SNAP/UNCOMMITTED.diff"

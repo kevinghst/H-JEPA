@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --partition=open_research
-#SBATCH --account=open_research
+#SBATCH --partition=<partition>
+#SBATCH --account=<account>
 #SBATCH --qos=normal
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:1
@@ -16,16 +16,16 @@
 # <code_root> defaults to the live repo; pass a snapshot dir for training runs.
 set -euo pipefail
 
-source ~/.bashrc
+# activate the stable_wm env here (e.g. source "$VENV/bin/activate")
 
-code_root=/mnt/vast/home/kevin/H-JEPA
+code_root="${REPO:?set REPO to the repo root}"
 if [ "$#" -gt 0 ] && [ -d "$1" ]; then
   code_root="$1"
   shift
 fi
 echo "Using code root: $code_root"
 export PYTHONPATH="$code_root:$code_root/h_jepa${PYTHONPATH:+:$PYTHONPATH}"
-export STABLEWM_HOME="${STABLEWM_HOME:-/mnt/vast/home/kevin/stable-wm-lejepa/datasets}"
+export STABLEWM_HOME="${STABLEWM_HOME:?set STABLEWM_HOME}"
 cd "$code_root/h_jepa"
 export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl

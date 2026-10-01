@@ -11,7 +11,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 [] uploade eval tasks
 [] verify code for generating datasets
 [] verify code for generating eval tasks
-[] check to see if unifying with basile's action clipping can work?
+[] check whether unifying with the DROID action clipping of the original code can work?
 
 
 ## Open questions / decisions
@@ -41,9 +41,9 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    84 paper checkpoints load without them).
 10. DROID data hosting and license: the 256p re-encoded corpus (`droid_paths_minus16_256p.csv`,
     `droid_val_indist_256p.csv` and their mp4 episodes; README `<LINK: DROID 256p corpus>`). The
-    CSVs list absolute paths under `/mnt/vast/home/basile.terver/shared/data/DROID/droid_256p/`,
+    CSVs listed absolute paths under the authors' DROID 256p directory,
     `config/train/base/droid.yaml` hardcodes the CSV paths, and the clip manifest points into the raw
-    release (`/mnt/vast/datasets/DROID/droid_raw/1.0.1/`). Where to host, and may a re-encoded DROID
+    release (`droid_raw/1.0.1/`). Where to host, and may a re-encoded DROID
     be redistributed?
 11. `fig:compute-pareto-real` TFLOPs axis: the original code measured it with `FlopCounterMode`; not ported.
     The release ships the skill-vs-(S, η) ladder only. Port the measurement or drop the axis from the
@@ -62,29 +62,17 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 - Optionally one training reproduction per env.
 - DROID reproduction pass: `ENVS=droid train_all.sh` (9 runs) + `eval_droid.sh` (27 evals), then fill the
   README "This release" column. Its multi-GPU `srun` launch has not been run yet.
-- 2026-09-28: `config/train/droid_lewm_v2.yaml` added: the v2 flat recipe
-  (`headlinev2top6_fps20_cls_flat_nf6_NSTEPS1_ep150`): 6-frame clips, gradient through the prediction target,
-  150 epochs x 292 batches, save every 10 epochs. Since 2026-09-30 in the native form (history_size 5 + rollout_n 1,
-  pred weight 5/6; was history_size 1 + rollout_n 5 + nsteps 1, see Round 6). Being
-  cross-validated (level-1 idm_coeff {25,50,100,200} x SIGReg weight {0.04,0.08,0.16,0.32}, seed 1,
-  planned at epoch 100). Not yet in README / provenance; keep or drop depending on the result.
-- 2026-09-28: `config/train/droid_hjepa_l{2,3,4}_v2.yaml` added: the v2-top6 CLS recipe
-  (`headlinev2top6_fps20_cls_e2e{2,3,4}lvl_nf{11,21,41}_crop6_ipe{277,248,192}_NSTEPS1_ep150`): stride 2 / window 1 at
-  every upper level, every level history_size 5 + rollout_n 1 = 6 states (Kevin's per-level crop; top level uncropped)
-  with pred weight 5/6 (= the source runs' nsteps-1 parallel unroll loss, which averages over the 6 states: per-level loss |d| 0,
-  grad cosine 1.0 at 2/3/4 levels), 150 epochs x round(292 W(n)/W(6)) = 277 / 248 / 192 batches. `DROIDDataset` now takes any
-  `levelN` (level setup shared with `HDF5Dataset`). Kevin's crop also runs at validation (the original code crops in training
-  only); left as is. Seed 1 training; not yet in README / provenance.
-- 2026-09-28 DROID plan-eval at any depth: `droid_plan_eval.py --config droid_{flat,l2,l3,l4}` (replaces `--hier`);
-  `--lr` / `--num-samples` take one value per level, the last one repeated upwards (`--lr 0.03 0.01` = old
-  `--lr 0.03 --l2-lr 0.01`). `droid_l3/l4.yaml` are stride 2 (horizons 36/18/9/4, num_subgoals = horizon, levels 3/4
-  use the level-2 GD settings). `eval_droid.sh` picks the config from the model name and takes `EPOCHS` / `RUNS`
-  (`eval_<plan>/epoch_<N>/`, missing ckpts skipped). Open: `droid_l2.yaml` is stride 3 (horizon 12), so
-  `droid_hjepa_l2_v2` (stride 2) needs a stride-2 two-level config (level 2 horizon / num_subgoals 18).
+- DROID `*_v2` train configs (v2 flat and 2/3/4-level CLS recipes, 150 epochs) and the stride-2 eval configs
+  `droid_l3` / `droid_l4` live in the gitignored `config/train/dev/` and `config/eval/dev/`, outside the release.
+  The release DROID configs are `droid_lewm`, `droid_hwm_l2`, `droid_hjepa_l2` (train) and `droid_flat`, `droid_l2` (eval).
+- DROID plan-eval: `eval.py --config-name droid_{flat,l2} policy=<ckpt> seed=<s> output.dir=<dir>` (dispatched to
+  `droid_eval.run_clip_eval` on the `clips` key); planner values are hydra overrides
+  (`solver.solvers.level<k>.optimizer_kwargs.lr=`, flat `solver.optimizer_kwargs.lr=`). `eval_droid.sh` picks the config
+  from the model name and takes `EPOCHS` / `RUNS` (`eval_<plan>/epoch_<N>/`, missing ckpts skipped).
 - 2026-09-29 DROID data on HF (answers open question 10): private dataset repo `jepa-world-models/h-jepa`,
   `droid/` = relative-path CSVs, 61 tar shards of the loader-read 256p files (`droid_256p/shard-*.tar`, 90.9 GB),
   `droid_raw_eval16.tar` (16 raw eval episodes), `SHA256SUMS`, `extract.sh`; dataset card = repo README.md (CC BY 4.0,
-  DROID citation); packing/upload scripts in `~/shared/cc_scratch/hjepa_droid_release/`. `DROIDClipReader` resolves relative CSV names, CSV
+  DROID citation); packing/upload scripts are not part of the release. `DROIDClipReader` resolves relative CSV names, CSV
   entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
   Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
   names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
@@ -122,7 +110,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 - DROID port (2026-09-28): models max|d| = 0 vs the reference port (source-run weights); data pipeline
   bitwise-identical; planner unit check passed; eval-only reproduction on the source-run weights within
   planner-seed noise (flat 31.9 / 34.5 / 32.4 vs original code 35.9 / 32.2 / 31.2).
-- 2026-09-28 DROID plan-eval on the refactored hierarchical solver (9158935): `droid_plan_eval.py` imports
+- 2026-09-28 DROID plan-eval on the refactored hierarchical solver (9158935): the DROID eval script imports
   `build_hierarchical_solver` (renamed) and passes `steps_taken=0` (now required by `solve()`). `droid_*.yaml` unchanged.
   e2e gate on the converted reference ckpts: flat and hier `eval.csv` string-identical to the pre-refactor port
   (flat ATE 0.2490 / Fréchet mean 0.2972 / median 0.4134; hier 0.3205 / 0.2072 / 0.3870).
@@ -265,7 +253,7 @@ Round 5
 Round 6 (2026-09-30, Kevin's PR review)
 - nsteps-1 parallel unroll: every nsteps-1 level is now Kevin's native form (history_size T-1, rollout_n 1,
   `loss.embed.pred.weight` (T-1)/T, same T): `droid_hwm_l2` level 1 (7, 1, 7/8) and level 2 (2, 1, 2/3),
-  `droid_hjepa_l2` level 2 (2, 1, 2/3), `droid_lewm_v2` (5, 1, 5/6); the `droid_hjepa_l{2,3,4}_v2` `nsteps: null`
+  `droid_hjepa_l2` level 2 (2, 1, 2/3), the dev v2 configs (`nsteps: null`
   overrides went with it. Old (HEAD code, nsteps 1) vs new (native x weight) on one real DROID batch, same weights:
   weighted pred loss |d| <= 2e-8 and `loss_levelN` |d| 0 at every level, grad cosine 1.000000000. Level-2 no-grad metrics
   (`mse_loss`, `l1_loss`, `dim_*`) and the unweighted `pred_loss_level2` now follow the native form (T-1 targets).
@@ -278,7 +266,7 @@ Round 6 (2026-09-30, Kevin's PR review)
   `models/predictors/causal.py` merged into `predictors.py`. Existing `*_object.ckpt` pickling
   `models.predictors.causal.*` or `ActionMLPEncoder` no longer unpickle (state_dict keys unchanged: re-save them
   through a module/class-renaming unpickler, or rebuild from the config and load the state_dict).
-- mentions of the original training code by name in code, configs and docs (`provenance.md` keeps the source-run paths).
+- mentions of the original training code by name in code, configs and docs (`provenance.md` keeps the paper run ids).
 
 DROID (not ported from the original code)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;

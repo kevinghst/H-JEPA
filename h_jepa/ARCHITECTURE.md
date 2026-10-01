@@ -2,7 +2,7 @@
 
 This document covers the two entry points for working with the hierarchical world model:
 - **Training**: `main_hjepa.py`
-- **Planning eval**: `eval.py` → `planning_eval.py`
+- **Planning eval**: `eval.py` → `planning_eval.py` (DROID clip configs: `droid_eval.py`)
 
 ---
 
@@ -211,10 +211,11 @@ as planning fields.
 eval.py
   └─ run_planning_eval
        └─ _build_policy
-            └─ build_hierarchical_solver
-                 └─ HierarchicalSolver
-                      ├─ level_solvers[1]: GradientSolver  (fine, level-1 model)
-                      └─ level_solvers[2]: GradientSolver  (coarse, level-2 model)
+            └─ build_solver
+                 └─ build_hierarchical_solver
+                      └─ HierarchicalSolver
+                           ├─ level_solvers[1]: GradientSolver  (fine, level-1 model)
+                           └─ level_solvers[2]: GradientSolver  (coarse, level-2 model)
 ```
 
 Each level gets its own gradient-descent solver wrapped in a `LevelCostModel` adapter. The adapter:

@@ -1,16 +1,16 @@
 ---
 name: paper-writing
-description: Use when writing, revising, outlining, or editing the H-JEPA paper in /mnt/vast/home/kevin/hjepa_paper (LaTeX sections, scientific claims, figure/table captions, related work, method descriptions, abstracts, ML-conference-style prose), or when paper text must stay consistent with this code release (e.g. implementation details, code availability, reproduction instructions).
+description: Use when writing, revising, outlining, or editing the H-JEPA paper in the paper repo `$PAPER_REPO` (LaTeX sections, scientific claims, figure/table captions, related work, method descriptions, abstracts, ML-conference-style prose), or when paper text must stay consistent with this code release (e.g. implementation details, code availability, reproduction instructions).
 ---
 
 # Paper Writing
 
 ## Repositories
 
-- Paper repo: `/mnt/vast/home/kevin/hjepa_paper` (default file to edit: `main.tex`, unless the user
+- Paper repo: `$PAPER_REPO` (default file to edit: `main.tex`, unless the user
   names another file or the LaTeX structure routes the content elsewhere).
-- Code release (this repo): `/mnt/vast/home/kevin/H-JEPA`.
-- Development repo with the figure/table pipeline: `/mnt/vast/home/kevin/stable-wm-lejepa`
+- Code release (this repo): `$REPO`.
+- Development repo with the figure/table pipeline: `$DEV_REPO` (the authors' `stable-wm-lejepa`
   (branch `hjepa_6_24`, `lejepa_code/paper_plots/`).
 
 ## Writing standard (source of truth)
@@ -18,7 +18,7 @@ description: Use when writing, revising, outlining, or editing the H-JEPA paper 
 Before any writing, revising, or LaTeX-editing task, read and follow the paper repo's skill:
 
 ```
-/mnt/vast/home/kevin/hjepa_paper/.claude/skills/paper-writing/SKILL.md
+$PAPER_REPO/.claude/skills/paper-writing/SKILL.md
 ```
 
 It holds the prose standard, method/results granularity, claim-to-evidence planning, LaTeX

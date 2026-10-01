@@ -54,7 +54,7 @@ stable_worldmodel/          environments, dataset loader, planning solvers and p
 scripts/data/               dataset collection (AntMaze, FourRoom) and Push-T utilities
 h_jepa/
   main_hjepa.py             training (ends with a planning eval and a probing/decoding eval)
-  eval.py                   standalone planning eval
+  eval.py                   standalone planning eval, every env (DROID: droid_eval.py)
   main_probing_decoding_eval.py   standalone probing/decoding eval
   models/                   JEPA levels, H-JEPA container, encoders, predictors
   config/train/             28 training configs: <env>_<model>.yaml (+ base/<env>.yaml),
@@ -62,7 +62,7 @@ h_jepa/
   config/eval/              28 planning configs: <env>_<planner>.yaml, DROID: droid_{flat,l2}.yaml
   config/probing/           final probing/decoding configs, one per environment
   droid_data.py             DROID mp4 loader (training) and evaluation-clip reader
-  droid_plan_eval.py        offline DROID planning eval on the 16 evaluation clips
+  droid_eval.py             offline DROID planning eval on the 16 evaluation clips (eval.py)
   droid_assets/             DROID normalization stats and evaluation-clip manifest
   scripts/                  eval-task generators and the train/eval helper scripts
   ARCHITECTURE.md           how training, the hierarchy and planning fit together
@@ -174,6 +174,18 @@ python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null 
 
 ```bash
 python main_hjepa.py --config-name <env>_<model> seed=<seed>
+```
+
+On SLURM, one process per GPU (here 2) through `srun`; `--requeue` is safe, a restarted job resumes
+from `<run_dir>/lightning_resume/last.ckpt`:
+
+```bash
+#!/bin/bash
+#SBATCH --nodes=1 --ntasks-per-node=2 --gpus-per-node=2 --cpus-per-task=16 --mem=200G --requeue
+source /path/to/.venv/bin/activate
+cd /path/to/H-JEPA/h_jepa
+export STABLEWM_HOME=/path/to/stablewm_home PYTHONPATH=$PWD/..:$PWD MUJOCO_GL=egl
+srun python main_hjepa.py --config-name droid_hjepa_l2 seed=1    # trainer.devices = 2 in base/droid
 ```
 
 A run writes to `$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
@@ -360,31 +372,33 @@ $STABLEWM_HOME/ckpts/droid/
 
 ### 5.3) Planning evaluation
 
-`droid_plan_eval.py` plans each evaluation clip start → goal in one open-loop call and scores the
-planned actions against the ground-truth ones:
+`eval.py` with a DROID config (`droid_eval.py`) plans each evaluation clip start → goal in one open-loop
+call and scores the planned actions against the ground-truth ones:
 
 ```bash
-python droid_plan_eval.py --ckpt <run>/droid_<model>_object.ckpt [--hier] \
-  --lr <η1> [--l2-lr <η2>] --num-samples <S> --seed <planner seed> --out <dir>
+python eval.py --config-name droid_flat seed=<planner seed> output.dir=<dir> policy=<run>/droid_lewm_object.ckpt
+python eval.py --config-name droid_l2 seed=<planner seed> output.dir=<dir> policy=<run>/droid_hjepa_l2_object.ckpt
+python eval.py --config-name droid_l2 seed=<planner seed> output.dir=<dir> policy=<run>/droid_hwm_l2_object.ckpt
 ```
 
 The planner settings are in `config/eval/droid_flat.yaml` (LeWM) and `config/eval/droid_l2.yaml`
-(`--hier`, HWM and H-JEPA): AdamW on the actions, 90 iterations with early stopping after 30
-(patience 5 at 1%), weight decay 0.01, initial std 1.5, actions clipped to ±2σ in normalized action
-space, horizon 36. Level 2 plans 12 steps and passes 12 subgoals to level 1 (weight β = 0.5 on the
-intermediate subgoal costs).
+(HWM and H-JEPA); any of them can be overridden on the command line (`solver.num_samples=<S>` flat,
+`solver.solvers.level<k>.num_samples=<S>` hierarchical): AdamW on the actions, 90 iterations with early
+stopping after 30 (patience 5 at 1%), weight decay 0.01, initial std 1.5, actions clipped to ±2σ in
+normalized action space, horizon 36. Level 2 plans 12 steps and passes 12 subgoals to level 1 (weight
+β = 0.5 on the intermediate subgoal costs).
 
 The metric is Fréchet fidelity, 1 − F(planned, GT) / F(zero motion, GT), with F the discrete Fréchet
-distance between cumulative xyz paths, averaged over the 16 clips. The eval writes, under
-`<out>/<tag>/`, `ep_<k>/actions.pt` and `ep_<k>/planning_compute.json` per clip and `eval.csv`
-(`frechet/skill_mean`) over every clip present, so one-clip shards (`--start-index k --num-eval 1`)
-can share one output dir.
+distance between cumulative xyz paths, averaged over the 16 clips. The eval writes to `output.dir`
+(relative to the checkpoint's directory) `plan_config.yaml`, `ep_<k>/actions.pt` and
+`ep_<k>/planning_compute.json` per clip and `eval.csv` (`frechet/skill_mean`) over every clip present, so
+one-clip shards (`start_index=k num_eval=1`) can share one output dir.
 
-| Model | Checkpoint | Planner | S | η (level 1, level 2) | planner TFLOPs / episode |
+| Model | Checkpoint | Config | S | η (level 1, level 2) | planner TFLOPs / episode |
 |---|---|---|---|---|---|
-| LeWM + IDM | `droid_lewm_object.ckpt` | flat | 32 | 0.01 | 13.9 |
-| HWM | `droid_hwm_l2_object.ckpt` | `--hier` | 16, 16 | 0.01, 0.3 | 11.4 |
-| H-JEPA | `droid_hjepa_l2_object.ckpt` | `--hier` | 16, 16 | 0.01, 0.3 | 11.6 |
+| LeWM + IDM | `droid_lewm_object.ckpt` | `droid_flat` | 32 | 0.01 | 13.9 |
+| HWM | `droid_hwm_l2_object.ckpt` | `droid_l2` | 16, 16 | 0.01, 0.3 | 11.4 |
+| H-JEPA | `droid_hjepa_l2_object.ckpt` | `droid_l2` | 16, 16 | 0.01, 0.3 | 11.6 |
 
 `scripts/eval_droid.sh` runs these cells with planner seeds 1, 2 and 3 on every trained model, writes
 `droid/droid_<model>/seed<seed>/eval_{flat,l2}/plan_seed<ps>/eval.csv` and prints the mean ± SE per model.

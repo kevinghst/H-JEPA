@@ -6,11 +6,11 @@ description: Verify that a change to the H-JEPA release keeps the paper results 
 # Release Check
 
 The release must stay equivalent to the runs behind the paper. Four checks, from cheapest to most
-expensive. Run from `/mnt/vast/home/kevin/H-JEPA/h_jepa` with
+expensive. Run from `$REPO/h_jepa` with
 
 ```bash
-export PYTHONPATH=/mnt/vast/home/kevin/H-JEPA:/mnt/vast/home/kevin/H-JEPA/h_jepa
-export STABLEWM_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets
+export PYTHONPATH=$REPO:$REPO/h_jepa
+# STABLEWM_HOME must point at the data root holding ckpts/ and eval assets
 S=.agents/skills/release-check/scripts
 ```
 
