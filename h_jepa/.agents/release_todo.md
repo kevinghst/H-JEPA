@@ -60,8 +60,8 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `eval_cost_ladder.sh`, ~250 SLURM jobs) against the README reference tables. Only `fourroom_l3`
   seed 42 checked so far (98% = paper). Needs the user's go-ahead.
 - Optionally one training reproduction per env.
-- DROID reproduction pass: `train_droid.sh` (9 runs) + `eval_droid.sh` (27 evals), then fill the
-  README "This release" column. The multi-GPU `srun` launch in `train_droid.sh` has not been run yet.
+- DROID reproduction pass: `ENVS=droid train_all.sh` (9 runs) + `eval_droid.sh` (27 evals), then fill the
+  README "This release" column. Its multi-GPU `srun` launch has not been run yet.
 - 2026-09-28: `config/train/droid_lewm_v2.yaml` added: the v2 flat recipe
   (`headlinev2top6_fps20_cls_flat_nf6_NSTEPS1_ep150`): 6-frame clips, gradient through the prediction target,
   150 epochs x 292 batches, save every 10 epochs. Since 2026-09-30 in the native form (history_size 5 + rollout_n 1,
@@ -94,8 +94,8 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   stable-pretraining's cache (runs/, environment*.json, heartbeat, checkpoints) in `<run_dir>/spt/` via
   `spt.set(cache_dir=...)` in `main_hjepa.py`. `base/droid.yaml` reads the relative CSV names; `check_datasets` looks
   them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
-  `scripts/migrate_ckpts_layout.sh` prints the `mv` + `subdir` rewrite for old-layout runs (not run on
-  Basile's or Kevin's ckpts yet).
+  Old-layout runs (`ckpts/<env>_<model>/`) move with `mv` + a `subdir: <env>/...` rewrite in their `config.yaml`
+  (Basile's DROID runs moved 2026-09-30; Kevin's to do, not part of the release).
 - 2026-09-30 fix D1 (level-2 action SIGReg): with T level-2 states the loader builds T action chunks, the last one
   padded past the clip end (a transition that does not exist); predictor and IDM used the first T-1, the action
   SIGReg used all T. `hjepa_forward` now applies it to `act_emb[:, : T - 1]` as the original code did. Gates: every

@@ -303,14 +303,14 @@ The models run at 5 fps (`data.fps: 5`, one step = 0.2 s). DROID mp4s are tagged
 Train 3 models × 3 seeds (9 runs):
 
 ```bash
-scripts/train_droid.sh
+ENVS=droid scripts/train_all.sh
 ```
 
 | Config | Model | GPUs × batch | Epochs |
 |---|---|---|---|
 | `droid_lewm` | flat LeWM + IDM | 2 × 128 | 100 |
 | `droid_hwm_l2` | HWM: identity level 2, trained end-to-end | 2 × 128 | 100 |
-| `droid_hjepa_l2` | H-JEPA: latent-MLP level 2, trained end-to-end | 2 × 128 | 150 (the paper reads epoch 100) |
+| `droid_hjepa_l2` | H-JEPA: latent-MLP level 2, trained end-to-end | 2 × 128 | 100 |
 
 An epoch is 292 steps. Each run takes one process per GPU: the script launches
 `srun --ntasks-per-node=2 python main_hjepa.py --config-name droid_<model> seed=<seed>`,

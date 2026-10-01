@@ -1,5 +1,4 @@
 # DROID: 2-level H-JEPA trained end to end (level 2: latent MLP encoder at stride 3).
-# pred weight (T-1)/T = the paper runs' 1-step loss, averaged over all T window states (context state included).
 defaults:
 - base/droid
 - _self_
@@ -14,10 +13,7 @@ data:
       window_size: ${level2.window_size}
       num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
 trainer:
-  max_epochs: 150
-level1:
-  wm:
-    nsteps: 2
+  max_epochs: 100
 level2:
   lr: 5.0e-04
   stride: 3
@@ -65,9 +61,6 @@ level2:
     adaln_init_scale: 0.02
   loss:
     embed:
-      pred:
-        enabled: true
-        weight: ${eval:'2 / 3'}
       sigreg:
         enabled: true
         weight: 0.16

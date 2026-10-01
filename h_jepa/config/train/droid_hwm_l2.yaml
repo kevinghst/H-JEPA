@@ -1,6 +1,5 @@
 # DROID: 2-level HWM baseline trained end to end. Same as H-JEPA except level 2 has an
-# identity encoder, no IDM and no SIGReg, and level 1 trains 1-step predictions only.
-# pred weight (T-1)/T = the paper runs' 1-step loss, averaged over all T window states (context state included).
+# identity encoder, no IDM and no SIGReg.
 defaults:
 - base/droid
 - _self_
@@ -16,15 +15,6 @@ data:
       num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
 trainer:
   max_epochs: 100
-level1:
-  wm:
-    history_size: 7
-    rollout_n: 1
-  loss:
-    embed:
-      pred:
-        enabled: true
-        weight: ${eval:'7 / 8'}
 level2:
   lr: 5.0e-04
   stride: 3
@@ -66,9 +56,6 @@ level2:
     adaln_init_scale: 0.02
   loss:
     embed:
-      pred:
-        enabled: true
-        weight: ${eval:'2 / 3'}
       sigreg:
         enabled: false
   probes:

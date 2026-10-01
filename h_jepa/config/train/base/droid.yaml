@@ -33,7 +33,7 @@ patch_size: 16
 encoder_scale: small
 dump_object: true
 save_every_n_epochs: 2
-resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
+resume_every_n_steps: 100  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
 trainer:
   max_epochs: 100
   devices: 2
@@ -81,8 +81,8 @@ level1:
   idm:
     hidden_dim: 256
   wm:
-    history_size: 3
-    rollout_n: 5
+    history_size: 7
+    rollout_n: 1
     embed_dim: 384
     use_proprio: false
     action_dim: 7
