@@ -19,7 +19,7 @@ from cdiff import flat
 from runs import R, ROOT
 
 CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "config" / "train")
-IGNORED = ("sweep", "subdir", "output_model_name", "wandb", "planning_eval", "final_probing_decoding_eval",
+IGNORED = ("sweep", "env", "subdir", "output_model_name", "wandb", "planning_eval", "final_probing_decoding_eval",
            "transition_budget", "train_batch_budget")
 REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|debug\..*)$",
            r"level\d+\.predictor\.ensemble_size$", r"level\d+\.loss\.embed\.temp_straight\..*",

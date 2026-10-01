@@ -3,11 +3,34 @@ from pathlib import Path
 import numpy as np
 from omegaconf import OmegaConf
 import stable_worldmodel as swm
-from stable_pretraining import data as dt
 import torch
 
 
 NORMALIZER_ARTIFACT_FILENAME = "normalizer.pt"
+IMAGENET_STATS = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+
+class ColumnTransform:
+    """Apply `fn` to `sample[source]` and store the result in `sample[target]`."""
+
+    def __init__(self, fn, source: str, target: str):
+        self.fn, self.source, self.target = fn, source, target
+
+    def __call__(self, sample: dict) -> dict:
+        sample[self.target] = self.fn(sample[self.source])
+        return sample
+
+
+class Compose:
+    """Apply dict-sample transforms in sequence."""
+
+    def __init__(self, *transforms):
+        self.transforms = transforms
+
+    def __call__(self, sample: dict) -> dict:
+        for t in self.transforms:
+            sample = t(sample)
+        return sample
 
 
 def build_hdf5_dataset(dataset_cfg, cache_dir=None):
@@ -16,6 +39,10 @@ def build_hdf5_dataset(dataset_cfg, cache_dir=None):
     else:
         cfg = dict(dataset_cfg)
     cfg.pop("val_name", None)
+    if cfg.pop("type", None) == "droid":
+        from droid_data import DROIDDataset
+
+        return DROIDDataset(**cfg)
     subset_seed = int(cfg.pop("subset_seed", 0))
     total_transitions = cfg.pop("total_transitions", None)
     dataset = swm.data.HDF5Dataset(**cfg, cache_dir=cache_dir)
@@ -75,17 +102,22 @@ def _select_episodes_for_transition_budget(
 
 def get_column_normalizer(dataset, source: str, target: str):
     """Get normalizer for a specific column in the dataset."""
-    col_data = dataset.get_col_data(source)
-    data = torch.from_numpy(np.array(col_data))
-    data = data[~torch.isnan(data).any(dim=1)]
-    mean = data.mean(0, keepdim=True).clone()
-    std = data.std(0, keepdim=True).clone()
+    if hasattr(dataset, "get_col_stats"):
+        mean_np, std_np = dataset.get_col_stats(source)
+        mean = torch.from_numpy(np.array(mean_np)).float()
+        std = torch.from_numpy(np.array(std_np)).float()
+    else:
+        col_data = dataset.get_col_data(source)
+        data = torch.from_numpy(np.array(col_data))
+        data = data[~torch.isnan(data).any(dim=1)]
+        mean = data.mean(0, keepdim=True).clone()
+        std = data.std(0, keepdim=True).clone()
 
     def norm_fn(x):
         x = (x - mean) / std
         return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0).float()
 
-    normalizer = dt.transforms.WrapTorchTransform(norm_fn, source=source, target=target)
+    normalizer = ColumnTransform(norm_fn, source=source, target=target)
 
     return normalizer
 
@@ -116,7 +148,7 @@ def get_column_normalizer_from_artifact(
             x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         return x.float()
 
-    return dt.transforms.WrapTorchTransform(norm_fn, source=source, target=target)
+    return ColumnTransform(norm_fn, source=source, target=target)
 
 
 def normalizer_columns_from_dataset_cfg(dataset_cfg) -> list[str]:
@@ -141,6 +173,15 @@ def normalizer_columns_from_dataset_cfg(dataset_cfg) -> list[str]:
 
 
 def _column_mean_std(dataset, col: str) -> tuple[np.ndarray, np.ndarray, int]:
+    if hasattr(dataset, "get_col_stats"):
+        mean, std = dataset.get_col_stats(col)
+        count = int(dataset.lengths.sum())
+        return (
+            np.asarray(mean, dtype=np.float64),
+            np.asarray(std, dtype=np.float64),
+            count,
+        )
+
     data = np.asarray(dataset.get_col_data(col))
     flat = data.reshape(data.shape[0], -1)
     valid_mask = ~np.isnan(flat).any(axis=1)

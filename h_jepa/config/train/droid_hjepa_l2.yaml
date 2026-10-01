@@ -1,0 +1,69 @@
+# DROID: 2-level H-JEPA trained end to end (level 2: latent MLP encoder at stride 3).
+defaults:
+- base/droid
+- _self_
+output_model_name: droid_hjepa_l2
+num_levels: 2
+save_every_n_epochs: 10
+grad_clip_per_level: true
+data:
+  dataset:
+    level2:
+      frameskip: ${level2.stride}
+      window_size: ${level2.window_size}
+      num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
+trainer:
+  max_epochs: 100
+level2:
+  lr: 5.0e-04
+  stride: 3
+  window_size: 1
+  idm_coeff: 50
+  idm:
+    hidden_dim: 256
+  action_sigreg_coeff: 0.005
+  wm:
+    history_size: 2
+    rollout_n: 1
+    embed_dim: 384
+    use_proprio: false
+  encoder:
+    type: latent_mlp
+    input_dim: 384
+    trunc_normal_init: true
+    hidden_dim: 768
+    output_dim: 384
+    final_ln: false
+    projector:
+      type: identity
+  action_encoder:
+    type: mlp
+    input_dim: ${level1.predictor.action_dim}
+    hidden_dims:
+    - 64
+    output_dim: 8
+    final_ln: true
+    trunc_normal_init: true
+    queue_size: 4000
+  action_embed:
+    type: identity
+  predictor:
+    type: causal_transformer
+    action_dim: ${level2.action_encoder.output_dim}
+    predictor_dim: 384
+    depth: 12
+    heads: 6
+    dim_head: 64
+    mlp_ratio: 4.0
+    max_seq_len: 16
+    dropout: 0.1
+    emb_dropout: 0.0
+    adaln_init_scale: 0.02
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.16
+  probes:
+    inputs:
+      proprio: null

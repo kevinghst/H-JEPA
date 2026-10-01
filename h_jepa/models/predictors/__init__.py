@@ -1,3 +1,3 @@
-from .predictors import ARPredictor
+from .predictors import ARPredictor, CausalTransformerPredictor
 
-__all__ = ["ARPredictor"]
+__all__ = ["ARPredictor", "CausalTransformerPredictor"]

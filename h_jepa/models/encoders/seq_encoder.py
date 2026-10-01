@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
 
+from loss import init_module_weights
+
+from ..module import MLP
+
 
 class PerStepMLP(nn.Module):
     """
@@ -136,3 +140,27 @@ class FlattenedSequenceEncoder(nn.Module):
                 f"got {tuple(x.shape)}"
             )
         return self.encoder(x[:, None])[:, 0]
+
+
+class SequenceMLPEncoder(nn.Module):
+    """Flatten each fixed-length chunk (B, T, L, C) and compress it with an MLP."""
+
+    def __init__(self, output_dim, hidden_dims, input_dim, temporal_stride, final_ln=True, trunc_normal_init=False):
+        super().__init__()
+        (hidden_dim,) = hidden_dims
+        self.output_dim = int(output_dim)
+        self.net = MLP(
+            input_dim=int(temporal_stride) * int(input_dim),
+            hidden_dim=int(hidden_dim),
+            output_dim=self.output_dim,
+            norm_fn=None,
+            act_fn=nn.ReLU,
+            final_ln=bool(final_ln),
+        )
+        if trunc_normal_init:
+            self.apply(init_module_weights)
+
+    def forward(self, inputs, padding_mask=None):
+        B, T, L, C = inputs.shape
+        z = self.net(inputs.reshape(B * T, L * C))  # [B*T, output_dim]
+        return z.reshape(B, T, self.output_dim)  # [B, T, output_dim]

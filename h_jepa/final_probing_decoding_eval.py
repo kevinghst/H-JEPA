@@ -8,7 +8,6 @@ from pathlib import Path
 import lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
-import stable_pretraining as spt
 import torch
 from loguru import logger as logging
 from omegaconf import OmegaConf
@@ -17,6 +16,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from data import (
+    Compose,
     NORMALIZER_ARTIFACT_FILENAME,
     build_hdf5_dataset,
     get_column_normalizer_from_artifact,
@@ -119,7 +119,7 @@ def _build_datasets(cfg, normalizer_artifact):
         if not col.startswith("pixels")
     ]
 
-    transform = spt.data.transforms.Compose(*extra_transforms)
+    transform = Compose(*extra_transforms)
     train_dataset.transform = transform
     for eval_dataset in eval_datasets.values():
         eval_dataset.transform = transform

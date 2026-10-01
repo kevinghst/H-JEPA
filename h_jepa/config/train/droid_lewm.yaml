@@ -1,0 +1,6 @@
+# DROID: flat CLS model (ViT-S/16 + causal transformer, 1-step predictions, IDM).
+defaults:
+- base/droid
+- _self_
+output_model_name: droid_lewm
+num_levels: 1

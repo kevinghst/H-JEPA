@@ -1,3 +1,4 @@
+import os
 import shlex
 import subprocess
 import sys
@@ -7,7 +8,6 @@ from pathlib import Path
 
 import hydra
 import numpy as np
-import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -16,6 +16,7 @@ from sklearn import preprocessing
 from torchvision.transforms import v2 as transforms
 
 from data import (
+    IMAGENET_STATS,
     NORMALIZER_ARTIFACT_FILENAME,
     load_normalizer_artifact,
 )
@@ -29,7 +30,7 @@ def img_transform(cfg):
         [
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
-            transforms.Normalize(**spt.data.dataset_stats.ImageNet),
+            transforms.Normalize(**IMAGENET_STATS),
             transforms.Resize(size=cfg.eval.img_size),
         ]
     )
@@ -67,6 +68,7 @@ def _resolve_existing_path(path: str | Path) -> Path:
         Path.cwd() / raw_path,
         Path(__file__).parent / raw_path,
         Path(__file__).parent.parent / raw_path,
+        Path(os.getenv("STABLEWM_HOME", "~/.stable_worldmodel")).expanduser() / raw_path,
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -475,7 +477,7 @@ def _run_chunked_eval(
                 s.solve_records = []
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(_serialize_metrics(metrics)))
-        tmp.replace(path)  # atomic: a preemption never leaves a partial chunk file
+        os.replace(tmp, path)  # atomic: a preemption never leaves a partial chunk file
         print(f"tasks {start}-{end}: success_rate {metrics['success_rate']:.1f}")
 
     chunks = [json.loads(p.read_text()) for p in chunk_paths.values()]

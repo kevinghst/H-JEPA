@@ -371,6 +371,20 @@ class JEPA(nn.Module):
         """
         return self.predictor(emb, act_emb)
 
+    def parallel_unroll(self, emb, act_emb, nsteps):
+        """nsteps passes over the band: each pass predicts frames 1..T-1 from the previous pass (the
+        encoder band on pass 0, detached after), with ground-truth frame 0 re-injected on the left.
+        Returns every pass stacked: (nsteps, B, T, D), aligned with emb.
+        """
+        T = emb.size(1) - 1
+        pred_input = emb[:, :T]
+        passes = []
+        for _ in range(nsteps):
+            predicted = torch.cat([emb[:, :1], self.predict(pred_input, act_emb[:, :T])], dim=1)
+            passes.append(predicted)
+            pred_input = torch.cat([emb[:, :1], predicted[:, 1:T].detach()], dim=1)
+        return torch.stack(passes)
+
     def rollout(self, info, action_sequence, history_size: int = 1):
         """Rollout the model given an initial info dict and action sequence."""
 

@@ -28,7 +28,7 @@ this repo's copy).
 ```bash
 quick_debug=true
 wandb.enabled=false
-subdir=<debug_run_id>
+subdir=<env>/<debug_run_id>
 trainer.max_epochs=1
 +trainer.limit_train_batches=2
 +trainer.limit_val_batches=0
@@ -79,7 +79,7 @@ loader.persistent_workers=false
 +final_probing_decoding_eval.overrides.save_artifacts=false
 ```
 
-After the run, delete `$STABLEWM_HOME/ckpts/<debug_run_id>` unless it is needed to diagnose a
+After the run, delete `$STABLEWM_HOME/ckpts/<env>/<debug_run_id>` unless it is needed to diagnose a
 failure.
 
 ## eval.py
