@@ -8,7 +8,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 
 [] load model ckpts
 [] upload datasets
-[] uploade eval tasks
+[x] upload eval tasks (HF `jepa-world-models/h-jepa`, `eval_trajs/`)
 [] verify code for generating datasets
 [] verify code for generating eval tasks
 [] check to see if unifying with basile's action clipping can work?
@@ -55,7 +55,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
     planner seeds 1/2/3 (`eval_droid.sh`). The planner-seed spread is ±4 points at S=4. Keep this, or
     report the SE over all 9 train x planner seeds?
 14. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
-    `h_jepa/assets/` symlink that holds the simulation eval tasks. Keep the separate tracked dir?
+    `h_jepa/assets/` dir that holds the simulation eval tasks. Keep the separate tracked dir?
 15. Prediction-loss precision (branch `bf16-pred-loss`): the paper code computed the teacher-forcing /
     rollout MSE by hand in bf16 (`_ensemble_mse`); the prune commit replaced it with `F.mse_loss`
     (fp32 under autocast), and the experiments_3 retrains of Ant H-JEPA 3/4, Cube H-JEPA 4,

@@ -157,27 +157,38 @@ policies>`); put the ant expert in `$STABLEWM_HOME/ogbench_experts/ant/` (`param
 ### 3.2) Generate evaluation tasks
 
 Each environment has a fixed set of 50 start/goal tasks under `h_jepa/assets/eval_trajs/`.
-Download them (`<LINK: eval tasks>`) or regenerate them:
+Download them from [`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):
+
+```bash
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir assets --include "eval_trajs/*"
+cd assets/eval_trajs && sha256sum -c SHA256SUMS && cd -
+```
+
+or regenerate them:
 
 ```bash
 # Visual AntMaze: start/goal cells 3 grid cells apart, reached by the expert policy
+# (needs the OGBench ant expert in $STABLEWM_HOME/ogbench_experts/ant/, see 3.1)
 python scripts/generate_maze_expert_grid_eval_tasks.py --config-name ant_flat \
   --output-path assets/eval_trajs/ant/expert_grid_d3_n50.pt \
   --d-low 3 --d-high 3 --num-episodes 50 --rollout-budget 125 --seed 42
 
 # FourRoom Distractors: writes one file per active-distractor count; the evals use _d1
+# (no dataset needed)
 python scripts/generate_fourroom_eval_tasks.py \
   --data-config-path ../scripts/data/config/fourroom_tp35_d0to5.yaml \
   --output-dir assets/eval_trajs/fourroom --output-stem fourroom_tp35 \
   --cross-n-rooms 2 --max-steps 75 --num-episodes 50
 
 # OGBench Cube: 20-step windows centred on the grasp, from the val split
+# (needs cube_single_expert_val.h5, see 3.1)
 python scripts/generate_dataset_eval_trajs.py --config-name cube_flat \
   --dataset-name cube_single_expert_val --traj-sampling-mode cube_pickup_centered \
   --goal-offset-steps 20 --eval-budget 50 --seed 42 \
   --output-path assets/eval_trajs/ogbench/goal_offset_20_pickup_val.pt
 
 # Push-T: 75-step windows from the val split, stratified over episodes
+# (needs pusht_expert_val.h5, see 3.1)
 python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null \
   eval.goal_offset_steps=75 eval.dataset_name=pusht_expert_val seed=42 \
   dump_eval_trajs_path=assets/eval_trajs/pusht/goal_offset_75_val.pt
