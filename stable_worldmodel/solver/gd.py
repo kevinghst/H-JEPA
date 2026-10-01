@@ -323,6 +323,8 @@ class GradientSolver(torch.nn.Module):
 
                 # Calculate cost using the batch parameter
                 costs = self.model.get_cost(current_info, batch_init)
+                for k in ('embed_0', 'goal_embed_0'):  # encode the observation and goal once per solve
+                    expanded_infos.setdefault(k, current_info[k])
 
                 assert isinstance(costs, torch.Tensor), (
                     f'Got {type(costs)} cost, expect torch.Tensor'
