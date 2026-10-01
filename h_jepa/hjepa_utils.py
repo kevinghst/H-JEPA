@@ -72,6 +72,12 @@ def _pred_component(pred, output, level, component):
     return pred.narrow(dim, pixel_size, pred.size(dim) - pixel_size)
 
 
+def _pred_mse(pred, target):
+    # Computed in the inputs' dtype (bf16 under autocast), as in the paper runs; F.mse_loss
+    # would be autocast to fp32 and change the training numerics.
+    return (pred - target).square().mean()
+
+
 def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
     """Encode HJEPA inputs, predict next states, and compute per-level losses."""
     normalize_batch(batch)
@@ -137,7 +143,7 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
                 output[_component_loss_key("pred", component, level_suffix)] = pred_loss
                 component_loss = _loss_term_weight(component_cfg, "pred") * pred_loss
             elif _loss_term_enabled(component_cfg, "pred"):
-                teacher_forcing_loss = F.mse_loss(
+                teacher_forcing_loss = _pred_mse(
                     _pred_component(teacher_pred, output, level, component),
                     component_emb[:, 1 : history_size + 1],
                 )
@@ -147,7 +153,7 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
                 if rollout_n == 1:
                     pred_loss = teacher_forcing_loss
                 else:
-                    rollout_loss = F.mse_loss(
+                    rollout_loss = _pred_mse(
                         _pred_component(pred_emb, output, level, component),
                         component_emb[:, history_size : history_size + rollout_n],
                     )

@@ -56,6 +56,12 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
     report the SE over all 9 train x planner seeds?
 14. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
     `h_jepa/assets/` symlink that holds the simulation eval tasks. Keep the separate tracked dir?
+15. Prediction-loss precision (branch `bf16-pred-loss`): the paper code computed the teacher-forcing /
+    rollout MSE by hand in bf16 (`_ensemble_mse`); the prune commit replaced it with `F.mse_loss`
+    (fp32 under autocast), and the experiments_3 retrains of Ant H-JEPA 3/4, Cube H-JEPA 4,
+    FourRoom HWM 4 came out below the paper. `_pred_mse` restores the paper arithmetic (loss terms
+    bit-identical to `lejepa_code`). It also changes DROID training (DROID levels use this branch).
+    Pending: retrains to see whether it closes the gap, and whether DROID should keep `F.mse_loss`.
 
 ## Pending work
 
