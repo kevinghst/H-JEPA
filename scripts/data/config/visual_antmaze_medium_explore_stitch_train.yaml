@@ -16,7 +16,7 @@ world:
   height: 64
   camera_name: back
 policy:
-  restore_path: ${oc.env:STABLEWM_HOME}/ogbench_experts/ant
+  restore_path: ${oc.env:HJEPA_HOME}/ogbench_experts/ant
   restore_epoch: 400000
   sample_every: 10
   noise: null

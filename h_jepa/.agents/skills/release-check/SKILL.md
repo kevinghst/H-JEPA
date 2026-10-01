@@ -10,7 +10,7 @@ expensive. Run from `/mnt/vast/home/kevin/H-JEPA/h_jepa` with
 
 ```bash
 export PYTHONPATH=/mnt/vast/home/kevin/H-JEPA:/mnt/vast/home/kevin/H-JEPA/h_jepa
-export STABLEWM_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets
+export HJEPA_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets
 S=.agents/skills/release-check/scripts
 ```
 
@@ -56,9 +56,9 @@ success, so never diff those. Reference values (paper checkpoints, 3 episodes):
 
 | command | success |
 |---|---|
-| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-10-2/0/seed42/model_object.ckpt` | [T, F, F] |
-| `eval.py --config-name cube_flat eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/7-28-1/ogb_level1_seed42__stage1/ogb_level1_seed42__stage1_object.ckpt` | [F, F, F] |
-| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$STABLEWM_HOME/ckpts/ogb/9-12-8/0/seed42/model_object.ckpt` | [T, F, F], steps 22 |
+| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/9-10-2/0/seed42/model_object.ckpt` | [T, F, F] |
+| `eval.py --config-name cube_flat eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/7-28-1/ogb_level1_seed42__stage1/ogb_level1_seed42__stage1_object.ckpt` | [F, F, F] |
+| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/9-12-8/0/seed42/model_object.ckpt` | [T, F, F], steps 22 |
 
 Add `output.dir=$(mktemp -d)`. These cover flat, hierarchical (3 levels with the top one skipped)
 and projected-cost (4-level model) planning. Compare two metrics files with

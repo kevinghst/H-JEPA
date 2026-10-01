@@ -1,7 +1,7 @@
 # OGBench Cube: 3-level hierarchical planning, shared by H-JEPA and HWM.
 # Levels 3+ have horizon 1, so their solves are skipped: 2-level planning of a deeper model.
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 wandb:
   enabled: false
   entity: null

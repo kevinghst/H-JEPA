@@ -2,7 +2,7 @@ policy: null
 output_subdir: final_probing_decoding_eval
 seed: 42
 device: auto
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 epochs: 25
 loader:
   batch_size: 128

@@ -2,7 +2,7 @@
 # Offline DROID planning evals behind fig:cls-ladder-droid: the paper planner cell of
 # each model on the 16 evaluation clips, with planner seeds 1/2/3 for every trained
 # model, then the mean Frechet fidelity per model. Checkpoints come from `ENVS=droid train_all.sh`
-# ($STABLEWM_HOME/ckpts/droid/droid_<model>/seed<seed>/); H-JEPA is read at epoch 100.
+# ($HJEPA_HOME/ckpts/droid/droid_<model>/seed<seed>/); H-JEPA is read at epoch 100.
 # The eval config follows the model name (lewm*: droid_flat, *_l<N>*: droid_l<N>).
 # EPOCHS="50 100 150" evaluates droid_<model>_epoch_<N>_object.ckpt instead, into
 # eval_<plan>/epoch_<N>/, skipping missing checkpoints.
@@ -13,7 +13,7 @@ MODELS=${MODELS:-"lewm hwm_l2 hjepa_l2"}
 SEEDS=${SEEDS:-"1 1000 10000"}
 PLAN_SEEDS=${PLAN_SEEDS:-"1 2 3"}
 EPOCHS=${EPOCHS:-""}
-RUNS=${RUNS:-$STABLEWM_HOME/ckpts/droid}
+RUNS=${RUNS:-$HJEPA_HOME/ckpts/droid}
 
 for model in $MODELS; do
   case $model in

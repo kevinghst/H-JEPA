@@ -88,7 +88,7 @@ h_jepa/
 git clone https://github.com/kevinghst/H-JEPA.git && cd H-JEPA
 conda create -n hjepa python=3.10 && conda activate hjepa
 pip install -e ".[train,env]"
-export STABLEWM_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
+export HJEPA_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
 ```
 
 ## 3) Usage
@@ -97,7 +97,7 @@ How to run each part of the pipeline. All commands run from `h_jepa/` unless not
 
 ### 3.1) Datasets
 
-The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read from mp4 (§5.1).
+The simulation datasets are HDF5 files under `$HJEPA_HOME`; DROID is read from mp4 (§5.1).
 
 | Environment | Files | Source |
 |---|---|---|
@@ -113,12 +113,12 @@ The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read fro
 validation set is in our release. From the repository root:
 
 ```bash
-hf download quentinll/lewm-pusht --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
-hf download quentinll/lewm-cube --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
-hf download jepa-world-models/h-jepa pusht_expert_val.h5 --repo-type dataset --local-dir $STABLEWM_HOME
-unzstd $STABLEWM_HOME/pusht_expert_train.h5.zst
-tar -I unzstd -xf $STABLEWM_HOME/cube_single_expert.tar.zst -C $STABLEWM_HOME
-python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5
+hf download quentinll/lewm-pusht --repo-type dataset --local-dir $HJEPA_HOME --include "*.zst"
+hf download quentinll/lewm-cube --repo-type dataset --local-dir $HJEPA_HOME --include "*.zst"
+hf download jepa-world-models/h-jepa pusht_expert_val.h5 --repo-type dataset --local-dir $HJEPA_HOME
+unzstd $HJEPA_HOME/pusht_expert_train.h5.zst
+tar -I unzstd -xf $HJEPA_HOME/cube_single_expert.tar.zst -C $HJEPA_HOME
+python scripts/data/add_pusht_block_ori.py $HJEPA_HOME/pusht_expert_train.h5
 python scripts/data/split_cube.py
 ```
 
@@ -132,9 +132,9 @@ set was converted from DINO-WM's Push-T validation data with `scripts/data/conve
 [`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):
 
 ```bash
-hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $STABLEWM_HOME \
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME \
   --include "visual_antmaze_medium_*" "fourroom_tp35_d1*" SHA256SUMS
-cd $STABLEWM_HOME && sha256sum -c --ignore-missing SHA256SUMS
+cd $HJEPA_HOME && sha256sum -c --ignore-missing SHA256SUMS
 ```
 
 or collect them (from the repository root):
@@ -144,7 +144,7 @@ bash scripts/data/collect_datasets.sh
 ```
 
 AntMaze is collected by rolling out the OGBench AntMaze expert policies (`<LINK: OGBench expert
-policies>`); put the ant expert in `$STABLEWM_HOME/ogbench_experts/ant/` (`params_400000.pkl`,
+policies>`); put the ant expert in `$HJEPA_HOME/ogbench_experts/ant/` (`params_400000.pkl`,
 `flags.json`). The script runs, per file, the collection config of the same name in
 `scripts/data/config/`. Collected files follow the same distribution as the downloaded ones:
 
@@ -168,7 +168,7 @@ or regenerate them:
 
 ```bash
 # Visual AntMaze: start/goal cells 3 grid cells apart, reached by the expert policy
-# (needs the OGBench ant expert in $STABLEWM_HOME/ogbench_experts/ant/, see 3.1)
+# (needs the OGBench ant expert in $HJEPA_HOME/ogbench_experts/ant/, see 3.1)
 python scripts/generate_maze_expert_grid_eval_tasks.py --config-name ant_flat \
   --output-path assets/eval_trajs/ant/expert_grid_d3_n50.pt \
   --d-low 3 --d-high 3 --num-episodes 50 --rollout-budget 125 --seed 42
@@ -200,7 +200,7 @@ python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null 
 python main_hjepa.py --config-name <env>_<model> seed=<seed>
 ```
 
-A run writes to `$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
+A run writes to `$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
 stable-pretraining cache `spt/` included):
 
 - `<env>_<model>_object.ckpt`: the trained model;
@@ -217,7 +217,7 @@ Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoin
 
 ```bash
 python main_probing_decoding_eval.py --config-name <env> \
-  policy=$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
 ```
 
 ### 3.5) Planning evaluation
@@ -226,7 +226,7 @@ To run a planner on a saved checkpoint:
 
 ```bash
 python eval.py --config-name <env>_<planner> seed=<seed> output.dir=<dir> \
-  policy=$STABLEWM_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
 ```
 
 The eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
@@ -264,7 +264,7 @@ for LeWM, n-level planning for H-JEPA and HWM with n levels), so the numbers com
 training:
 
 ```
-$STABLEWM_HOME/ckpts/<env>/          <env> in {ant, fourroom, cube, pusht}
+$HJEPA_HOME/ckpts/<env>/          <env> in {ant, fourroom, cube, pusht}
   <env>_<model>/                    <model> in {lewm, hjepa_l2..4, hwm_l2..4}
     seed<seed>/                     <seed> in {42, 43, 44}
       <env>_<model>_object.ckpt
@@ -299,7 +299,7 @@ scripts/eval_cost_ladder.sh
 `ENVS` and `SEEDS` restrict it as above. Each eval writes next to the checkpoint:
 
 ```
-$STABLEWM_HOME/ckpts/<env>/
+$HJEPA_HOME/ckpts/<env>/
   <env>_hjepa_l<n>/                 <n> in {2, 3, 4}
     seed<seed>/
       eval_flat/metrics.yaml        native L1
@@ -333,18 +333,18 @@ the three planner seeds).
 ### 5.1) Data
 
 Download the DROID data (91 GB of tar shards, CC BY 4.0, see the dataset card) into
-`$STABLEWM_HOME/droid/` and unpack it in place:
+`$HJEPA_HOME/droid/` and unpack it in place:
 
 ```bash
-hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $STABLEWM_HOME --include "droid/*"
-bash $STABLEWM_HOME/droid/extract.sh    # checks SHA256SUMS, untars the shards; --delete drops the tars
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME --include "droid/*"
+bash $HJEPA_HOME/droid/extract.sh    # checks SHA256SUMS, untars the shards; --delete drops the tars
 ```
 
 DROID episodes are mp4 files decoded with `decord` (`droid_data.py`), which resolves relative paths
-against `$STABLEWM_HOME/droid`. Training reads `droid_paths_minus16_256p.csv`: 74,896 episodes, all
+against `$HJEPA_HOME/droid`. Training reads `droid_paths_minus16_256p.csv`: 74,896 episodes, all
 of DROID 1.0.1 minus the 16 evaluation clips, re-encoded at 256x256 (`droid_256p/1.0.1/...`).
 `droid_val_indist_256p.csv` (64 episodes) is the validation split used for monitoring. Both CSVs list
-episode directories relative to `$STABLEWM_HOME/droid`; set them with `data.dataset.name` and
+episode directories relative to `$HJEPA_HOME/droid`; set them with `data.dataset.name` and
 `data.dataset.val_name` (`config/train/base/droid.yaml`; an absolute path also works).
 
 `h_jepa/droid_assets/` holds the action/proprio normalization stats (`norm_stats_droid.json`, key
@@ -375,7 +375,7 @@ so run it inside a SLURM allocation with 2 GPUs and 2 tasks per node, or submit 
 own job. `MODELS` and `SEEDS` restrict it as in §4.1. A run writes:
 
 ```
-$STABLEWM_HOME/ckpts/droid/
+$HJEPA_HOME/ckpts/droid/
   droid_<model>/                    <model> in {lewm, hwm_l2, hjepa_l2}
     seed<seed>/                     <seed> in {1, 1000, 10000}
       droid_<model>_object.ckpt     final model

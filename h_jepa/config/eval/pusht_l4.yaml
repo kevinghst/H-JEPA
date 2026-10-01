@@ -1,6 +1,6 @@
 # Push-T: 4-level hierarchical planning, shared by H-JEPA and HWM.
 # Paper setting (no Push-T four-level compute sweep was run).
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 wandb:
   enabled: false
   entity: null

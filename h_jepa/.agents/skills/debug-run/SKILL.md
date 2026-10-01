@@ -79,7 +79,7 @@ loader.persistent_workers=false
 +final_probing_decoding_eval.overrides.save_artifacts=false
 ```
 
-After the run, delete `$STABLEWM_HOME/ckpts/<env>/<debug_run_id>` unless it is needed to diagnose a
+After the run, delete `$HJEPA_HOME/ckpts/<env>/<debug_run_id>` unless it is needed to diagnose a
 failure.
 
 ## eval.py

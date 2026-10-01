@@ -125,7 +125,7 @@ class LocomazeExplorePolicy(BasePolicy):
     ):
         if restore_path is None:
             restore_path = os.path.join(
-                os.environ['STABLEWM_HOME'], f'ogbench_experts/{expert_name}'
+                os.environ['HJEPA_HOME'], f'ogbench_experts/{expert_name}'
             )
         super().__init__(**kwargs)
         if dataset_type not in {'explore', 'navigate', 'stitch'}:

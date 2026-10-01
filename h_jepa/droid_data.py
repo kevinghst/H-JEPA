@@ -59,7 +59,7 @@ class DROIDClipReader(torch.utils.data.Dataset):
     cartesian_position ++ gripper_position. `frozen_clips` pins view and frame indices per clip
     (plan-eval manifest); otherwise the view and the window are drawn at random per access.
     Relative paths (the CSV, its episode entries, the manifest's episode_path) resolve against
-    $STABLEWM_HOME/droid.
+    $HJEPA_HOME/droid.
     """
 
     def __init__(

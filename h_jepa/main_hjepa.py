@@ -154,7 +154,7 @@ def run(cfg):
 
     _configure_runtime_performance()
 
-    cache_dir = os.environ.get("STABLEWM_HOME", None)
+    cache_dir = os.environ.get("HJEPA_HOME", None)
 
     dataset_cfg = {k: v for k, v in cfg.data.dataset.items() if k != "val_name"}
     val_total_transitions = dataset_cfg.pop("val_total_transitions", None)
@@ -247,7 +247,7 @@ def run(cfg):
     rand_str = f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}"
     run_id = cfg.get("subdir") or rand_str
 
-    ckpt_root = Path(os.getenv("STABLEWM_HOME", str(swm.data.utils.get_cache_dir()))) / "ckpts"
+    ckpt_root = Path(os.getenv("HJEPA_HOME", str(swm.data.utils.get_cache_dir()))) / "ckpts"
     run_dir = ckpt_root / run_id
     spt.set(cache_dir=str(run_dir / "spt"))
     logging.info(f"🫆🫆🫆 Run ID: {run_id} 🫆🫆🫆")

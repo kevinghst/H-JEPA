@@ -31,7 +31,7 @@ env: ant
 subdir: ${env}/${output_model_name}/seed${seed}
 hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
   run:
-    dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
+    dir: ${oc.env:HJEPA_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
 quick_debug: false
 num_workers: 6
 seed: 42

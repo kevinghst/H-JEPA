@@ -69,7 +69,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   re-stored with lossless Blosc-Zstd, 90 -> 32 GB; `observation`, an exact copy of `pixels`, dropped from the
   non-training AntMaze files; every column verified against the originals), `pusht_expert_val.h5` and
   `SHA256SUMS`; documented in the dataset card. The Zstd files are under `/mnt/vast/home/kevin/hjepa_release_data`,
-  which also works as a `STABLEWM_HOME` with the release names.
+  which also works as a `HJEPA_HOME` with the release names.
 - Push-T / Cube training data: LeWM's HF releases. Checked 2026-10-01: LeWM's `cube_single_expert.h5` is
   byte-identical to ours and `scripts/data/split_cube.py` reproduces our train/val files; LeWM's Push-T train file
   plus `add_pusht_block_ori.py` equals our `pusht_expert_train.h5` in every column.
@@ -102,7 +102,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `droid/` = relative-path CSVs, 61 tar shards of the loader-read 256p files (`droid_256p/shard-*.tar`, 90.9 GB),
   `droid_raw_eval16.tar` (16 raw eval episodes), `SHA256SUMS`, `extract.sh`; dataset card = repo README.md (CC BY 4.0,
   DROID citation); packing/upload scripts in `~/shared/cc_scratch/hjepa_droid_release/`. `DROIDClipReader` resolves relative CSV names, CSV
-  entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
+  entries and manifest `episode_path`s against `$HJEPA_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
   Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
   names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
   Done 2026-09-30 (next bullet).
@@ -110,7 +110,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `subdir: ${env}/${output_model_name}/seed${seed}`; `launch.py train` sweeps at `ckpts/<env>/<sweep>_<ts>/`), and
   stable-pretraining's cache (runs/, environment*.json, heartbeat, checkpoints) in `<run_dir>/spt/` via
   `spt.set(cache_dir=...)` in `main_hjepa.py`. `base/droid.yaml` reads the relative CSV names; `check_datasets` looks
-  them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
+  them up under `$HJEPA_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$HJEPA_HOME`).
   Old-layout runs (`ckpts/<env>_<model>/`) move with `mv` + a `subdir: <env>/...` rewrite in their `config.yaml`
   (Basile's DROID runs moved 2026-09-30; Kevin's to do, not part of the release).
 - 2026-09-30 fix D1 (level-2 action SIGReg): with T level-2 states the loader builds T action chunks, the last one
@@ -119,7 +119,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   loss term and module gradient matches the original code within 1.2e-6 relative (eb H-JEPA seed-1 e-100 weights);
   flat forward and Cube (no action SIGReg) unchanged bitwise; `droid_hjepa_l2` / `droid_hwm_l2` change only
   `sigreg_loss_action_level2`. DROID HWM / H-JEPA l2 fleets retrained with it (`droid_{hwm,hjepa}_l2_n1fix`).
-- Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
+- Delete the test outputs under `$HJEPA_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).
 

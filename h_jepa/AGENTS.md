@@ -53,14 +53,14 @@ h_jepa/              main code; run everything from here
 
 ## Running
 
-- Use the `stable_wm` conda env with `STABLEWM_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets`
+- Use the `stable_wm` conda env with `HJEPA_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets`
   (datasets, experts, checkpoints under `ckpts/`).
 - That env has the development repo's `stable_worldmodel` installed in editable mode, so always run
   with `PYTHONPATH=/mnt/vast/home/kevin/H-JEPA:/mnt/vast/home/kevin/H-JEPA/h_jepa` to import this
   repo's copy.
 - Eval tasks live in `h_jepa/assets/eval_trajs/` (git-ignored; local copies of the four task files the
   configs load, the same place the download instructions save them).
-- Paper checkpoints (for checking evals) are under `$STABLEWM_HOME/ckpts/`; the depth-figure models
+- Paper checkpoints (for checking evals) are under `$HJEPA_HOME/ckpts/`; the depth-figure models
   are e.g. `ant/9-6-1/1/seed42` (H-JEPA 3 levels) and `ogb/9-10-2/0/seed42` (Cube 3 levels).
 
 ## Skills

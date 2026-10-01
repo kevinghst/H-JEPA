@@ -1,8 +1,8 @@
-"""Paper runs behind each release training config (seed placeholder {s}), relative to $STABLEWM_HOME/ckpts."""
+"""Paper runs behind each release training config (seed placeholder {s}), relative to $HJEPA_HOME/ckpts."""
 import os
 import re
 
-ROOT = os.path.join(os.environ["STABLEWM_HOME"], "ckpts") + "/"
+ROOT = os.path.join(os.environ["HJEPA_HOME"], "ckpts") + "/"
 R = {
     "ant": {"lewm": "ant/7-28-2/ant_level1_union_ds_seed{s}__stage1", "hjepa_l2": "ant/9-6-3/1/seed{s}",
             "hjepa_l3": "ant/9-6-1/1/seed{s}", "hjepa_l4": "ant/9-6-2/1/seed{s}", "hwm_l2": "ant/9-12-5/0/seed{s}",

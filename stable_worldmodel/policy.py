@@ -509,7 +509,7 @@ def AutoCostModel(
 
     Args:
         run_name: Path or name of the model run/checkpoint.
-        cache_dir: Optional cache directory path. Defaults to STABLEWM_HOME.
+        cache_dir: Optional cache directory path. Defaults to HJEPA_HOME.
 
     Returns:
         The module with a `get_cost` method, set to eval mode.
