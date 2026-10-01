@@ -20,7 +20,7 @@ level2:
   stride: 3
   window_size: 1
   idm_coeff: 0
-  action_sigreg_coeff: 0.02
+  action_sigreg_coeff: 0.005
   wm:
     history_size: 2
     rollout_n: 1
