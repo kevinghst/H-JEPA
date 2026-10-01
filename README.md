@@ -76,7 +76,7 @@ python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5 
 ```
 
 **Visual AntMaze and FourRoom Distractors.** Download the eight files from
-`<LINK: HF dataset>` (`jepa-world-models/h-jepa`):
+[`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):
 
 ```bash
 hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $STABLEWM_HOME \
@@ -93,17 +93,13 @@ bash scripts/data/collect_datasets.sh
 AntMaze is collected by rolling out the OGBench AntMaze expert policies (`<LINK: OGBench expert
 policies>`); put the ant expert in `$STABLEWM_HOME/ogbench_experts/ant/` (`params_400000.pkl`,
 `flags.json`). The script runs, per file, the collection config of the same name in
-`scripts/data/config/`. Collected files follow the same distribution as the downloaded ones but
-are not byte-identical:
+`scripts/data/config/`. Collected files follow the same distribution as the downloaded ones:
 
-- The FourRoom configs and the AntMaze `stitch_val` / `probing_train` configs are the collection
-  configs of the downloaded files.
-- The downloaded AntMaze training file (12,500 explore + 12,500 stitch episodes) is exactly the
-  training data of the seed-42 paper models: all of one explore collection and 12,500 episodes of a
-  larger stitch collection whose seed was not recorded. It keeps only the columns training reads;
-  a collected file also has the collector's other columns.
-- The downloaded AntMaze probing eval file (155 explore + 155 stitch episodes) joins two separate
-  collections; the config collects both parts into one file with the same seeds.
+- FourRoom collections reproduce the downloaded files (identical in our checks).
+- AntMaze collections are not byte-identical (part of the AntMaze reset randomness is not seeded). The
+  downloaded training file (12,500 `explore` + 12,500 `stitch` episodes) is the training data of
+  the seed-42 paper models and keeps only the columns training reads; a collected file also has the
+  collector's other columns. The probing eval file holds 155 `explore` + 155 `stitch` episodes.
 
 ### 3.2) Generate evaluation tasks
 

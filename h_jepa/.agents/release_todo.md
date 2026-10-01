@@ -46,6 +46,8 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 
 ## Pending work
 
+- AntMaze + FourRoom datasets uploaded 2026-10-01 to HF `jepa-world-models/h-jepa` (8 `.h5` + `SHA256SUMS`,
+  checksums verified on the Hub). Dataset card section still to add (draft: `h_jepa/logs/hf_upload/card_sections.md`).
 - Full planning pass on the paper checkpoints: all 28 planning configs x 3 seeds (`eval_depth.sh` +
   `eval_cost_ladder.sh`, ~250 SLURM jobs) against the README reference tables. Only `fourroom_l3`
   seed 42 checked so far (98% = paper). Needs the user's go-ahead.
