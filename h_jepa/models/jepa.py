@@ -397,7 +397,8 @@ class JEPA(nn.Module):
 
         _init = {k: v[:, 0] for k, v in info.items() if torch.is_tensor(v)}
         if "embed_0" not in _init:
-            _init = self.encode(_init)
+            with torch.no_grad():
+                _init = self.encode(_init)
         emb = info["embed_0"] = _init["embed_0"].unsqueeze(1).expand(B, S, -1, -1)
         _init = {k: detach_clone(v) for k, v in _init.items()}
 
@@ -464,7 +465,8 @@ class JEPA(nn.Module):
                     _goal[k[len("goal_") :]] = _goal.pop(k)
 
             _goal.pop("action")
-            _goal = self.encode(_goal)
+            with torch.no_grad():
+                _goal = self.encode(_goal)
 
             info_dict["goal_embed_0"] = _goal["embed_0"]
 
