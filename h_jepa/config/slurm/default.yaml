@@ -1,7 +1,7 @@
 # Cluster settings for launch.py. Copy the keys you change into config/slurm/local.yaml (gitignored),
 # which overrides this file; --partition/--account/--qos/--time override both.
 # Every null key must be set in local.yaml (or on the CLI); partition and account are set together.
-venv: null            # python env activated by the job, e.g. /path/to/.venv (set it in local.yaml)
+venv: null            # python env whose bin/python runs the jobs, e.g. /path/to/.venv (set it in local.yaml)
 partition: null      # e.g. gpu
 account: null
 qos: null            # e.g. normal
@@ -15,5 +15,4 @@ eval:
   gpus_per_node: 1
   cpus_per_task: 10
   mem: 64G
-  base_minutes: 10    # eval --time = base_minutes + minutes_per_epoch[env] x epochs in the job
-  minutes_per_epoch: {cube: 30, ant: 240, default: 60}
+eval_time: {cube: "00:40:00", ant: "04:10:00", default: "01:10:00"}  # per env, one epoch per eval job

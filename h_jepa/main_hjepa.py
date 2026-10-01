@@ -339,6 +339,7 @@ def run(cfg):
     resume_file = run_dir / "lightning_resume" / "last.ckpt"
     resume_every = cfg.get("resume_every_n_steps", 2000)
     resume_callbacks = [ResumeCheckpoint(resume_file, resume_every)] if resume_every else []
+    spt.set(requeue_checkpoint=not resume_every)  # lightning_resume/ already holds the full state
 
     trainer = pl.Trainer(
         **cfg.trainer,

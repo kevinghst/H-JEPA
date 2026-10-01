@@ -1,36 +1,22 @@
-"""SLURM launcher for H-JEPA training, resume and per-epoch planning eval. Run from h_jepa/.
+"""SLURM launcher for H-JEPA training, resume and per-epoch planning eval, any env. Run from h_jepa/.
 
   python launch.py train --config-name cube_lewm --sweep crop_ab [--seeds 42,43,44] \\
-      [--grid level1.wm.history_size=3,7 ...] [--into <sweep_dir>] [hydra overrides ...] [--dry]
-  python launch.py resume <run_dir> [hydra overrides, e.g. trainer.max_epochs=100] [--dry]
-  python launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [--chunk K] [--tasks <abs .pt>] \\
-      [eval.py overrides, e.g. eval.num_eval=4] [--dry]
-  common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G (partition and account go together)
+      [--grid level1.wm.history_size=3,7 ...] [--into <sweep_dir>] [hydra overrides ...]
+  python launch.py resume <run_dir> [hydra overrides, e.g. trainer.max_epochs=100]
+  python launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [eval.py overrides]
+  common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G --dry
 
-train   One job per (grid cell x seed): the cartesian product of every --grid key=v1,v2 and --seeds.
-        Sweep dir $STABLEWM_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/ (<env> = the config's env key),
-        run dirs <sweep_dir>/<cell>/seed<S>,
-        output_model_name = <cell>, a readable token per grid key: level2.wm.history_size=7 -> l2hs7
-        (level number + initials of the last key part; full key when two tokens would collide).
-        The tree (git ls-files -co --exclude-standard) is copied to <sweep_dir>/code with GIT_COMMIT,
-        GIT_STATUS and UNCOMMITTED.diff; jobs run from that copy, so later worktree edits never change
-        the sweep. --into <sweep_dir> adds cells/seeds to an existing sweep with its own code copy.
-        wandb (when the cfg enables it) gets group = sweep name. <sweep_dir>/launch.json logs each launch.
-resume  Relaunch one run from its saved <run_dir>/config.yaml (main_hjepa.py --config-path <run_dir>
-        --config-name config), from the sweep's code copy when there is one. Training restarts from
-        lightning_resume/last.ckpt (full state). Refused for a sweep dir, a run without config.yaml or
-        last.ckpt (main_hjepa.py cannot resume from epoch ckpts alone), or a run with a live job.
-eval    Planning eval of every <run>/<name>_epoch_<N>_object.ckpt under the target with
-        eval.py --config-name <env>_{flat|l2|l3|l4} (planner = the run's num_levels, env from the saved
-        planning_eval.config_name or the dataset name), planner seed = model seed, output
-        <run>/eval_epoch/epoch_<N>/metrics.yaml. Done evals and live jobs are skipped, so re-running
-        picks up new epochs; --chunk K epochs per job; --time default = base + per-epoch minutes x K.
-
-Before any sbatch: STABLEWM_HOME set; the Hydra config composes with the exact overrides (unknown keys
-fail); dataset files named in cfg.data exist; fresh train run dirs are absent; cluster settings are
-complete. Cluster settings: config/slurm/default.yaml, overridden by config/slurm/local.yaml (gitignored:
-venv, partition, account, ...), overridden by CLI flags. Job logs: <run_dir>/slurm/%x_%j.out.
-Job body: scripts/launch.sbatch (--requeue, --open-mode=append; multi-GPU via srun, one task per GPU).
+train   One job per (grid cell x seed) in $STABLEWM_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/<cell>/seed<S>,
+        <cell> = output_model_name = one token per grid key (level2.wm.history_size=7 -> l2hs7). The tree
+        (git ls-files -co --exclude-standard) is copied once to <sweep_dir>/code (+ GIT_COMMIT, GIT_STATUS,
+        UNCOMMITTED.diff); every job of the sweep, its resumes and --into additions run from that copy.
+resume  Relaunch one run from its saved config.yaml; training restarts from lightning_resume/last.ckpt.
+eval    One job per <run>/<name>_epoch_<N>_object.ckpt under the target: eval.py --config-name <env>_{flat|l<n>},
+        planner seed = model seed -> <run>/eval_epoch/epoch_<N>/ (metrics.yaml; DROID: eval.csv). Evals run from
+        <sweep_dir>/eval_code, frozen from the worktree at the sweep's first eval (mv it aside to refresh).
+Every check (config composes, datasets exist, no live job, fresh dirs absent) runs before any sbatch.
+Cluster settings: config/slurm/default.yaml < local.yaml < flags. Jobs requeue on preemption, append to
+<run_dir>/slurm/%x_%j.out and run the code copy's main_hjepa.py (srun, one task per GPU) or eval.py.
 """
 
 import argparse
@@ -50,8 +36,6 @@ from omegaconf import OmegaConf
 
 H = Path(__file__).resolve().parent
 REPO = H.parent
-SBATCH = H / "scripts" / "launch.sbatch"
-RESERVED = {"", "sweep", "test", "tmp", "default"}
 SET_BY_LAUNCHER = {"seed", "subdir", "output_model_name", "trainer.devices"}
 LIVE = "PENDING,CONFIGURING,RUNNING,SUSPENDED,REQUEUED,REQUEUE_HOLD,RESIZING"  # not COMPLETING
 EPOCH_RE = re.compile(r"_epoch_(\d+)_object\.ckpt$")
@@ -72,19 +56,15 @@ def cluster(sub: str, a: argparse.Namespace) -> OmegaConf:
     c = OmegaConf.load(H / "config/slurm/default.yaml")
     if (H / "config/slurm/local.yaml").exists():
         c = OmegaConf.merge(c, OmegaConf.load(H / "config/slurm/local.yaml"))
-    c = OmegaConf.merge(c, c.get(sub) or {})
     if a.partition and not a.account:
         die("--partition needs --account too (they are set together)")
-    for k in ("partition", "account", "qos", "time", "mem"):
-        if getattr(a, k):
-            c[k] = getattr(a, k)
-    if a.gpus:
-        c.gpus_per_node = a.gpus
+    flags = {k: getattr(a, k) for k in ("partition", "account", "qos", "time", "mem") if getattr(a, k)}
+    c = OmegaConf.merge(c, c.get(sub) or {}, flags, {"gpus_per_node": a.gpus} if a.gpus else {})
     keys = ("venv", "partition", "account", "qos", "gpus_per_node", "cpus_per_task", "mem", "time")
     if missing := [k for k in keys if c.get(k) in (None, "")]:
         die(f"cluster settings missing {missing}: set them in {H}/config/slurm/local.yaml")
-    if not Path(c.venv, "bin/activate").exists():
-        die(f"venv {c.venv} has no bin/activate")
+    if not Path(c.venv, "bin/python").exists():
+        die(f"venv {c.venv} has no bin/python")
     return c
 
 
@@ -100,12 +80,9 @@ def compose_cfg(config_dir: Path, name: str, overrides: list) -> OmegaConf:
 
 def check_datasets(cfg: OmegaConf, home: Path) -> None:
     for k in ("name", "val_name"):
-        v = OmegaConf.select(cfg, f"data.dataset.{k}", default=None)
-        if not v:
-            continue
-        p = home / "droid" / v if v.endswith(".csv") else home / f"{v}.h5"
-        if not p.exists():
-            die(f"data.dataset.{k}={v}: {p} not found")
+        if v := OmegaConf.select(cfg, f"data.dataset.{k}", default=None):
+            p = home / "droid" / v if v.endswith(".csv") else home / f"{v}.h5"
+            p.exists() or die(f"data.dataset.{k}={v}: {p} not found")
 
 
 def git(*args: str) -> str:
@@ -119,34 +96,17 @@ def snapshot(dest: Path) -> None:
     subprocess.run(rsync, cwd=REPO, input=files, text=True, check=True)
     if os.path.lexists(H / "assets") and not os.path.lexists(dest / "h_jepa/assets"):
         (dest / "h_jepa/assets").symlink_to(os.path.realpath(H / "assets"))  # gitignored eval tasks
-    (dest / "GIT_COMMIT").write_text(git("rev-parse", "HEAD"))
-    (dest / "GIT_STATUS").write_text(git("status", "--short"))
-    (dest / "UNCOMMITTED.diff").write_text(git("diff", "HEAD"))
+    for f, args in (("GIT_COMMIT", ["rev-parse", "HEAD"]), ("GIT_STATUS", ["status", "--short"]),
+                    ("UNCOMMITTED.diff", ["diff", "HEAD"])):  # fmt: skip
+        (dest / f).write_text(git(*args))
     print(f"code snapshot {dest} @ {git('rev-parse', '--short', 'HEAD').strip()}")
 
 
-def find_snapshot(p: Path, home: Path) -> Path | None:
-    for d in [p, *p.parents]:
-        if (d / "code/GIT_COMMIT").exists():
-            code = d / "code"
-            if (code / "GIT_COMMIT").read_text() != git("rev-parse", "HEAD") or (
-                code / "UNCOMMITTED.diff"
-            ).read_text() != git("diff", "HEAD"):
-                print(f"WARNING: {code} differs from the worktree; jobs run the snapshot, not your edits")
-            return code
-        if d == home / "ckpts":
-            return None
-    return None
-
-
-def code_root(p: Path, home: Path, dry: bool, tag: str) -> Path:
-    """The sweep's code snapshot above p, else a fresh snapshot at p/code_<tag>_<ts>."""
-    if code := find_snapshot(p, home):
-        return code
-    code = p / f"code_{tag}_{datetime.now():%Y-%m-%d_%H-%M-%S}"
-    print(f"no sweep code snapshot above {p}: {'would snapshot' if dry else 'snapshotting'} the worktree")
-    if not dry:
-        snapshot(code)
+def find_snapshot(p: Path, name: str = "code") -> Path | None:  # the sweep's <name> code copy above p
+    code = next((d / name for d in [p, *p.parents] if (d / name / "GIT_COMMIT").exists()), None)
+    head = [git("rev-parse", "HEAD"), git("diff", "HEAD")]
+    if code and [(code / f).read_text() for f in ("GIT_COMMIT", "UNCOMMITTED.diff")] != head:
+        print(f"WARNING: {code} differs from the worktree; jobs run it, not your edits (mv it aside to refresh)")
     return code
 
 
@@ -158,18 +118,13 @@ def is_run(d: Path) -> bool:
     return (d / "config.yaml").exists() and bool(epoch_ckpts(d) or (d / "lightning_resume").exists())
 
 
-def active_job_names() -> set:
-    r = subprocess.run(["squeue", "--me", "-h", "-t", LIVE, "-o", "%j"], capture_output=True, text=True)
-    return set(r.stdout.split())
-
-
 def submit(c, home: Path, name: str, log_dir: Path, gpus: int, code: Path, args: list, dry: bool) -> str | None:
+    job = shlex.join([f"{c.venv}/bin/python", str(H / "launch.py"), "_job", str(code), *args])
     cmd = ["sbatch", "--parsable", f"--job-name={name}", f"--partition={c.partition}",
-           f"--account={c.account}", f"--qos={c.qos}", f"--time={c.time}", f"--ntasks-per-node={gpus}",
-           f"--gpus-per-node={gpus}", f"--cpus-per-task={c.cpus_per_task}", f"--mem={c.mem}",
-           f"--output={log_dir}/%x_%j.out",
-           f"--export=ALL,HJ_CODE={code},HJ_VENV={c.venv},HJ_GPUS={gpus},STABLEWM_HOME={home}",
-           str(code / "h_jepa/scripts/launch.sbatch" if not dry else SBATCH), *args]  # fmt: skip
+           f"--account={c.account}", f"--qos={c.qos}", f"--time={c.time}", "--nodes=1", "--requeue",
+           "--open-mode=append", f"--ntasks-per-node={gpus}", f"--gpus-per-node={gpus}", f"--mem={c.mem}",
+           f"--cpus-per-task={c.cpus_per_task}", *(f"--{k}={log_dir}/%x_%j.out" for k in ("output", "error")),
+           f"--export=ALL,STABLEWM_HOME={home}", f"--wrap={job}"]  # fmt: skip
     if dry:
         print("DRY", shlex.join(cmd))
         return "DRY"
@@ -182,6 +137,31 @@ def submit(c, home: Path, name: str, log_dir: Path, gpus: int, code: Path, args:
         return None
     print(f"submitted {jid} {name}")
     return jid
+
+
+def done_file(config: str, out: Path) -> Path:
+    return out / ("eval.csv" if config.startswith("droid") else "metrics.yaml")
+
+
+def run_job(code: str, mode: str, args: list) -> None:
+    """Job body: the code copy's `train <main_hjepa.py args>` or `eval <config|seed|ckpt|outdir>... -- <overrides>`."""
+    os.chdir(f"{code}/h_jepa")
+    os.environ.pop("MUJOCO_EGL_DEVICE_ID", None)
+    os.environ.update(PYTHONPATH=f"{code}:{code}/h_jepa", PATH=f"{Path(sys.executable).parent}:{os.environ['PATH']}",
+                      PYTHONDONTWRITEBYTECODE="1", HYDRA_FULL_ERROR="1", PYTHONFAULTHANDLER="1", MUJOCO_GL="egl",
+                      PYOPENGL_PLATFORM="egl", MPLBACKEND="Agg", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+                      WANDB_MODE="disabled" if mode == "eval" else os.environ.get("WANDB_MODE", "online"))
+    jid = os.environ["SLURM_JOB_ID"]
+    print(f"{mode} code={code} job={jid} restart={os.environ.get('SLURM_RESTART_COUNT', 0)}", flush=True)
+    if mode == "train":  # exec: srun gets the job's signals (preemption -> spt requeue handler)
+        os.environ["MASTER_PORT"] = str(20000 + int(jid) % 20000)
+        os.execvp("srun", ["srun", sys.executable, "main_hjepa.py", *args])
+    specs, ov, rc = args[: args.index("--")], args[args.index("--") + 1 :], 0
+    for config, seed, ckpt, out in (spec.split("|") for spec in specs):
+        if not done_file(config, Path(out)).exists():
+            rc |= subprocess.run([sys.executable, "eval.py", "--config-name", config, f"seed={seed}", f"policy={ckpt}",
+                                  f"output.dir={out}", f"hydra.run.dir={out}/hydra", *ov]).returncode != 0  # fmt: skip
+    sys.exit(rc)
 
 
 def record(d: Path, entry: dict) -> None:
@@ -202,17 +182,14 @@ def safe(v: str) -> str:
 
 def cmd_train(a, overrides: list) -> None:
     home, c = stablewm_home(), cluster("train", a)
-    if a.sweep.lower() in RESERVED or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", a.sweep):
-        die(f"--sweep {a.sweep!r}: give a descriptive, filesystem-safe name (not {sorted(RESERVED - {''})})")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", a.sweep):
+        die(f"--sweep {a.sweep!r}: give a descriptive, filesystem-safe name")
     for o in overrides:
         if (k := o.split("=")[0].lstrip("+~")) in SET_BY_LAUNCHER or k.startswith("hydra."):
             die(f"{k} is set by launch.py")
-    grid = []
-    for g in a.grid:
-        k, _, vs = g.partition("=")
-        if not vs or k.lstrip("+~") in SET_BY_LAUNCHER:
-            die(f"--grid {g!r}: expected key=v1,v2 on a key launch.py does not set")
-        grid.append((k, vs.split(",")))
+    grid = [(k, vs.split(",")) for k, _, vs in (g.partition("=") for g in a.grid)]
+    if bad := [k for k, vs in grid if vs == [""] or k.lstrip("+~") in SET_BY_LAUNCHER]:
+        die(f"--grid {bad}: expected key=v1,v2 on keys launch.py does not set")
     toks = [key_token(k) for k, _ in grid]
     if len(set(toks)) < len(toks):
         toks = [safe(k.lstrip("+~")) + "-" for k, _ in grid]
@@ -244,70 +221,55 @@ def cmd_train(a, overrides: list) -> None:
     print(f"sweep {sweep_dir}: {len(jobs)} jobs ({len(jobs) // len(a.seeds.split(','))} cells x {a.seeds})")
     code = sweep_dir / "code"
     if a.into:
-        find_snapshot(sweep_dir, home)
+        find_snapshot(sweep_dir)
     elif not a.dry:
         snapshot(code)
     ids = {}
     for cell, s, run_dir, ov in jobs:
-        name = f"hj_{a.sweep}_{cell}_s{s}"
         args = ["train", "--config-name", a.config_name, *ov]
-        ids[str(run_dir)] = submit(c, home, name, run_dir / "slurm", c.gpus_per_node, code, args, a.dry)
+        ids[str(run_dir)] = submit(c, home, f"hj_{a.sweep}_{cell}_s{s}", run_dir / "slurm", c.gpus_per_node, code,
+                                   args, a.dry)  # fmt: skip
     if not a.dry:
         commit = (code / "GIT_COMMIT").read_text().strip()
-        record(sweep_dir, {"cmd": "train", "config_name": a.config_name, "overrides": overrides,
-                           "grid": dict(grid), "seeds": a.seeds, "jobs": ids, "snapshot_commit": commit})
+        record(sweep_dir, {"cmd": "train", "config_name": a.config_name, "overrides": overrides, "grid": dict(grid),
+                           "seeds": a.seeds, "jobs": ids, "snapshot_commit": commit})
 
 
 def cmd_resume(a, overrides: list) -> None:
     home, c = stablewm_home(), cluster("resume", a)
     rd = Path(a.run_dir).resolve()
-    below = [d for d in [*rd.glob("*"), *rd.glob("*/*")] if d.is_dir() and is_run(d)]
-    if below:
+    if below := [d for d in [*rd.glob("*"), *rd.glob("*/*")] if d.is_dir() and is_run(d)]:
         die(f"{rd} contains {len(below)} run dirs (a sweep dir?): resume one run dir")
-    if not (rd / "config.yaml").exists():
-        die(f"{rd} has no config.yaml: not a run dir (not started yet?)")
-    if not (rd / "lightning_resume/last.ckpt").exists():
-        extra = " (epoch ckpts exist, but main_hjepa.py resumes only from last.ckpt)" if epoch_ckpts(rd) else ""
-        die(f"nothing to resume in {rd}: no lightning_resume/last.ckpt{extra}; start a new run with train")
+    if not (rd / "lightning_resume/last.ckpt").exists() or not (rd / "config.yaml").exists():
+        die(f"nothing to resume in {rd}: needs config.yaml and lightning_resume/last.ckpt (epoch ckpts are not)")
     saved = OmegaConf.load(rd / "config.yaml")
-    if (home / "ckpts" / str(OmegaConf.select(saved, "subdir"))).resolve() != rd:
-        die(f"saved subdir={OmegaConf.select(saved, 'subdir')} is not {rd} under STABLEWM_HOME={home}")
     for f in (rd / "launch.json", rd.parent.parent / "launch.json"):
         log = json.loads(f.read_text()) if f.exists() else []
-        if not (jid := next((e["jobs"][str(rd)] for e in reversed(log) if str(rd) in e.get("jobs", {})), None)):
-            continue
-        r = subprocess.run(["squeue", "-h", "-j", str(jid), "-t", LIVE, "-o", "%T"], capture_output=True, text=True)
-        if r.stdout.strip():
-            die(f"job {jid} of {rd} is still {r.stdout.strip()}: it resumes by itself on requeue")
-    name = f"hj_resume_{saved.output_model_name}_s{saved.seed}"
-    if live := {name, str(saved.output_model_name)} & active_job_names():
-        die(f"a job named {live} is queued or running for {rd}")
+        jid = next((e["jobs"][str(rd)] for e in reversed(log) if str(rd) in e.get("jobs", {})), None)
+        sq = ["squeue", "-h", "-j", str(jid), "-t", LIVE, "-o", "%T"]
+        if jid and (st := subprocess.run(sq, capture_output=True, text=True).stdout.strip()):
+            die(f"job {jid} of {rd} is still {st}: it resumes by itself on requeue")
+    if not (code := find_snapshot(rd)):
+        die(f"no sweep code snapshot (code/GIT_COMMIT) above {rd}")
     dev = OmegaConf.select(saved, "trainer.devices")
     gpus = a.gpus or (dev if isinstance(dev, int) else int(c.gpus_per_node))
     ov = [*overrides, f"trainer.devices={gpus}", f"hydra.run.dir={rd}/hydra"]
     compose_cfg(rd, "config", ov)
-    code = code_root(rd, home, a.dry, "resume")
-    jid = submit(c, home, name, rd / "slurm", gpus, code, ["train", "--config-path", str(rd),
-                 "--config-name", "config", *ov], a.dry)  # fmt: skip
+    jid = submit(c, home, f"hj_resume_{saved.output_model_name}_s{saved.seed}", rd / "slurm", gpus, code,
+                 ["train", "--config-path", str(rd), "--config-name", "config", *ov], a.dry)  # fmt: skip
     if not a.dry:
         record(rd, {"cmd": "resume", "overrides": overrides, "jobs": {str(rd): jid}, "code": str(code)})
 
 
-def env_of(cfg: OmegaConf) -> str:
-    envs = {p.name.split("_")[0] for p in (H / "config/eval").glob("*.yaml")}
-    ds = Path(str(OmegaConf.select(cfg, "data.dataset.name", default=""))).name.lower()
-    cands = [str(OmegaConf.select(cfg, "planning_eval.config_name", default="") or "").split("_")[0],
-             *re.split(r"[^a-z]+", ds)]  # fmt: skip
-    if env := next((e for e in cands if e in envs), None):
-        return env
-    die(f"cannot tell the env of the run (candidates {cands}, eval envs {sorted(envs)})")
+def env_of(cfg: OmegaConf) -> str:  # runs made before the train configs had an `env` key fall back
+    pe = OmegaConf.select(cfg, "planning_eval.config_name", default=None) or ""
+    ds = str(OmegaConf.select(cfg, "data.dataset.name", default=""))
+    return cfg.get("env") or pe.split("_")[0] or ("droid" if ds.endswith(".csv") else die(f"no env for {ds}"))
 
 
 def cmd_eval(a, overrides: list) -> None:
     home, c = stablewm_home(), cluster("eval", a)
     root = Path(a.target).resolve()
-    if a.tasks and not (Path(a.tasks).is_absolute() and Path(a.tasks).is_file()):
-        die(f"--tasks {a.tasks}: expected an existing absolute .pt path")
     runs = [root] if is_run(root) else []
     for dp, dns, fns in [] if runs else os.walk(root):
         if "config.yaml" in fns and epoch_ckpts(Path(dp)):
@@ -316,58 +278,50 @@ def cmd_eval(a, overrides: list) -> None:
         dns[:] = sorted(n for n in dns if not n.startswith(("code", "hydra", ".", "slurm", "eval_", "lightning")))
     if not runs:
         die(f"no run dirs (config.yaml + *_epoch_*_object.ckpt) under {root}")
-    active, checked, plan, ndone = active_job_names(), set(), [], 0
+    sq = subprocess.run(["squeue", "--me", "-h", "-t", LIVE, "-o", "%j"], capture_output=True, text=True)
+    active, checked, plan, ndone = set(sq.stdout.split()), set(), [], 0
     for rd in runs:
         cfg = OmegaConf.load(rd / "config.yaml")
-        env, n, seed = env_of(cfg), int(cfg.num_levels), int(cfg.seed)
-        ecfg = f"{env}_{'flat' if n == 1 else f'l{n}'}"
-        eps = epoch_ckpts(rd)
+        env, n, seed, eps = env_of(cfg), int(cfg.num_levels), int(cfg.seed), epoch_ckpts(rd)
+        ecfg, run = f"{env}_{'flat' if n == 1 else f'l{n}'}", str(cfg.output_model_name)
+        run += "" if run.endswith(f"s{seed}") else f"_s{seed}"
         want = sorted(eps) if a.epochs == "all" else [max(eps)] if a.epochs == "last" else \
             [int(x) for x in a.epochs.split(",")]  # fmt: skip
-        todo = []
         for e in want:
-            out = rd / "eval_epoch" / f"epoch_{e}"
-            if e not in eps:
-                print(f"MISSING {rd} epoch {e}")
-            elif (out / "metrics.yaml").exists():
-                ndone += 1
-            else:
-                todo.append((e, f"{ecfg}|{seed}|{eps[e]}|{out}|{a.tasks or ''}"))
-        if todo and ecfg not in checked:
-            tasks = [f"load_eval_trajs_path={a.tasks}"] if a.tasks else []
-            ecomp = compose_cfg(H / "config/eval", ecfg, [f"seed={seed}", f"policy={eps[todo[0][0]]}",
-                                f"output.dir={rd}", *tasks, *overrides])  # fmt: skip
-            if not a.tasks and (t := ecomp.get("load_eval_trajs_path")):
-                try:
-                    ok = (H / t).exists()
-                except PermissionError:
-                    ok = print(f"WARNING: cannot stat default tasks {H / t}") or True
-                if not ok:
-                    die(f"{ecfg}: default tasks {H / t} missing; pass --tasks")
-            checked.add(ecfg)
-        for i in range(0, len(todo), a.chunk):
-            chunk = todo[i : i + a.chunk]
-            name = f"ev_{cfg.output_model_name}{'' if cfg.output_model_name.endswith(f's{seed}') else f'_s{seed}'}_e{'-'.join(str(e) for e, _ in chunk)}"
-            if name in active:
-                print(f"ACTIVE {name}: skipped")
+            out, name = rd / "eval_epoch" / f"epoch_{e}", f"ev_{run}_e{e}"
+            done = done_file(ecfg, out).exists()
+            why = "missing" if e not in eps else "done" if done else name in active and "active"
+            if why:
+                ndone += done
+                print(f"SKIP {name}: {why}")
                 continue
-            per = c.minutes_per_epoch.get(env, c.minutes_per_epoch.default)
-            m = c.base_minutes + per * len(chunk)
-            plan.append((rd, name, [s for _, s in chunk], a.time or f"{m // 60:02d}:{m % 60:02d}:00"))
-    print(f"{len(runs)} runs, {ndone} evals done, {sum(len(p[2]) for p in plan)} to run in {len(plan)} jobs")
+            if ecfg not in checked:  # composes (catches bad overrides) and its eval tasks exist
+                t = compose_cfg(H / "config/eval", ecfg, [f"seed={seed}", f"policy={eps[e]}", *overrides])
+                t = t.get("load_eval_trajs_path")
+                try:
+                    not t or (H / t).exists() or Path(t).exists() or die(f"{ecfg}: eval tasks {t} missing")
+                except PermissionError:
+                    print(f"WARNING: cannot stat eval tasks {t}")
+                checked.add(ecfg)
+            plan.append((rd, name, f"{ecfg}|{seed}|{eps[e]}|{out}", c.eval_time.get(env, c.eval_time.default)))
+    print(f"{len(runs)} runs, {ndone} evals done, {len(plan)} to run")
     if not plan:
         return
-    code = code_root(root, home, a.dry, "eval")
+    if not (code := find_snapshot(root, "eval_code")):  # first eval of this sweep: freeze the worktree's eval code
+        code = next((d for d in [root, *root.parents] if (d / "code/GIT_COMMIT").exists()), root) / "eval_code"
+        print(f"{'would snapshot' if a.dry else 'snapshotting'} the worktree to {code}")
+        a.dry or snapshot(code)
     ids = {}
-    for rd, name, specs, t in plan:
-        c.time = t
-        ids[name] = submit(c, home, name, rd / "slurm", 1, code, ["eval", *specs, "--", *overrides], a.dry)
+    for rd, name, spec, t in plan:
+        c.time = a.time or t
+        ids[name] = submit(c, home, name, rd / "slurm", 1, code, ["eval", spec, "--", *overrides], a.dry)
     if not a.dry:
-        record(root, {"cmd": "eval", "epochs": a.epochs, "tasks": a.tasks, "overrides": overrides,
-                      "jobs": ids, "code": str(code)})  # fmt: skip
+        record(root, {"cmd": "eval", "epochs": a.epochs, "overrides": overrides, "jobs": ids, "code": str(code)})
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["_job"]:
+        return run_job(sys.argv[2], sys.argv[3], sys.argv[4:])
     common = argparse.ArgumentParser(add_help=False)
     for f in ("--partition", "--account", "--qos", "--time", "--mem"):
         common.add_argument(f)
@@ -381,13 +335,10 @@ def main() -> None:
     t.add_argument("--seeds", default="42")
     t.add_argument("--grid", action="append", default=[], help="key=v1,v2 (repeatable)")
     t.add_argument("--into", help="existing sweep dir to add jobs to")
-    r = sp.add_parser("resume", parents=[common])
-    r.add_argument("run_dir")
+    sp.add_parser("resume", parents=[common]).add_argument("run_dir")
     e = sp.add_parser("eval", parents=[common])
     e.add_argument("target")
     e.add_argument("--epochs", default="all", help="all | last | N,M")
-    e.add_argument("--chunk", type=int, default=1, help="epochs per job")
-    e.add_argument("--tasks", help="absolute eval tasks .pt (load_eval_trajs_path)")
     a, overrides = p.parse_known_args()
     if bad := [o for o in overrides if o.startswith("-") or "=" not in o]:
         die(f"unrecognized arguments {bad} (hydra overrides are key=value)")
