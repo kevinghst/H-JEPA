@@ -59,35 +59,34 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-eval_datasets:
-  val:
-    name: pusht_expert_val
-    keys_to_load:
-    - pixels
-    - action
-    - state
-    - proprio
-    - block_ori
-    - agent_xy
-    - block_xy
-    - agent_vel
-    keys_to_cache:
-    - action
-    - state
-    - proprio
-    keys_to_merge:
-      agent_xy:
-        key: state
-        start: 0
-        end: 2
-      block_xy:
-        key: state
-        start: 2
-        end: 4
-      agent_vel:
-        key: state
-        start: 5
-        end: 7
-    level1:
-      frameskip: 1
-      num_steps: 1
+eval_dataset:
+  name: pusht_expert_val
+  keys_to_load:
+  - pixels
+  - action
+  - state
+  - proprio
+  - block_ori
+  - agent_xy
+  - block_xy
+  - agent_vel
+  keys_to_cache:
+  - action
+  - state
+  - proprio
+  keys_to_merge:
+    agent_xy:
+      key: state
+      start: 0
+      end: 2
+    block_xy:
+      key: state
+      start: 2
+      end: 4
+    agent_vel:
+      key: state
+      start: 5
+      end: 7
+  level1:
+    frameskip: 1
+    num_steps: 1

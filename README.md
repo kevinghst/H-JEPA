@@ -101,45 +101,58 @@ The simulation datasets are HDF5 files under `$STABLEWM_HOME`; DROID is read fro
 
 | Environment | Files | Source |
 |---|---|---|
-| Push-T | `pusht_expert_train.h5`, `pusht_expert_val.h5` | download (LeWM) |
-| OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) |
-| Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val_2_5x}.h5`, `visual_antmaze_medium_probing_{train_2_5x,eval_explore_2_5x,eval_stitch_2_5x}.h5` | generated |
-| FourRoom Distractors | `fourroom_7_21/tp35/fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | generated |
+| Push-T | `pusht_expert_train.h5`, `pusht_expert_val.h5` | download (LeWM + HF) |
+| OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) + split |
+| Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val,probing_train,probing_eval}.h5` | download (HF) or generate |
+| FourRoom Distractors | `fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | download (HF) or generate |
 | DROID | `droid/droid_paths_minus16_256p.csv`, `droid/droid_val_indist_256p.csv`, the 256p mp4 episodes they list (`droid/droid_256p/`) and the 16 raw evaluation episodes (`droid/droid_raw/`) | download (HF `jepa-world-models/h-jepa`, §5.1) |
 
-**Push-T and Cube.** Follow the LeWM data instructions: `<LINK: Push-T data>`, `<LINK: Cube data>`.
-The Push-T probing config also reads a `block_ori` column (`[cos, sin]` of the block angle). If the
-downloaded files lack it, add it in place (from the repository root):
+**Push-T and Cube.** The training data is LeWM's release
+([`quentinll/lewm-pusht`](https://huggingface.co/datasets/quentinll/lewm-pusht),
+[`quentinll/lewm-cube`](https://huggingface.co/datasets/quentinll/lewm-cube), MIT). The Push-T
+validation set is in our release. From the repository root:
 
 ```bash
-python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5 $STABLEWM_HOME/pusht_expert_val.h5
+hf download quentinll/lewm-pusht --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
+hf download quentinll/lewm-cube --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
+hf download jepa-world-models/h-jepa pusht_expert_val.h5 --repo-type dataset --local-dir $STABLEWM_HOME
+unzstd $STABLEWM_HOME/pusht_expert_train.h5.zst
+tar -I unzstd -xf $STABLEWM_HOME/cube_single_expert.tar.zst -C $STABLEWM_HOME
+python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5
+python scripts/data/split_cube.py
 ```
 
-**Visual AntMaze.** The data is collected by rolling out the OGBench AntMaze expert policies
-(`<LINK: OGBench expert policies>`); put the ant expert in `$STABLEWM_HOME/ogbench_experts/ant/`
-(`params_400000.pkl`, `flags.json`). From the repository root:
+`add_pusht_block_ori.py` adds the `block_ori` column (`[cos, sin]` of the block angle) that the
+Push-T probing config reads; the validation file already has it. `split_cube.py` writes
+`cube_single_expert_train.h5` (first 9,800 episodes) and `cube_single_expert_val.h5` (last 200);
+the `.zst` archives and `cube_single_expert.h5` can be deleted afterwards. The Push-T validation
+set was converted from DINO-WM's Push-T validation data with `scripts/data/convert_pusht_noise_to_h5.py`.
+
+**Visual AntMaze and FourRoom Distractors.** Download the eight files from
+[`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):
 
 ```bash
-for name in explore_stitch_train stitch_val_2_5x \
-            probing_train_2_5x probing_eval_explore_2_5x probing_eval_stitch_2_5x; do
-  python scripts/data/collect_antmaze.py --config-name visual_antmaze_medium_$name
-done
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $STABLEWM_HOME \
+  --include "visual_antmaze_medium_*" "fourroom_tp35_d1*" SHA256SUMS
+cd $STABLEWM_HOME && sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-The training set is half explore, half stitch trajectories (12,500 episodes each). The released
-file is the exact data the seed-42 paper models were trained on; the collection config produces an
-equivalent file, not an identical one.
-
-**FourRoom Distractors.** From the repository root:
+or collect them (from the repository root):
 
 ```bash
-for name in fourroom_tp35_d1 fourroom_tp35_d1_val fourroom_tp35_d1_probing fourroom_tp35_d1_probing_val; do
-  python scripts/data/collect_fourroom_distractors.py --config-name $name
-done
+bash scripts/data/collect_datasets.sh
 ```
 
-Each config under `scripts/data/config/` is the collection config saved next to the dataset used in
-the paper.
+AntMaze is collected by rolling out the OGBench AntMaze expert policies (`<LINK: OGBench expert
+policies>`); put the ant expert in `$STABLEWM_HOME/ogbench_experts/ant/` (`params_400000.pkl`,
+`flags.json`). The script runs, per file, the collection config of the same name in
+`scripts/data/config/`. Collected files follow the same distribution as the downloaded ones:
+
+- FourRoom collections reproduce the downloaded files (identical in our checks).
+- AntMaze collections are not byte-identical (part of the AntMaze reset randomness is not seeded). The
+  downloaded training file (12,500 `explore` + 12,500 `stitch` episodes) is the training data of
+  the seed-42 paper models and keeps only the columns training reads; a collected file also has the
+  collector's other columns. The probing eval file holds 155 `explore` + 155 `stitch` episodes.
 
 ### 3.2) Generate evaluation tasks
 

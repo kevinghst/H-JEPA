@@ -1,5 +1,6 @@
 """Paper runs behind each release training config (seed placeholder {s}), relative to $STABLEWM_HOME/ckpts."""
 import os
+import re
 
 ROOT = os.path.join(os.environ["STABLEWM_HOME"], "ckpts") + "/"
 R = {
@@ -23,3 +24,10 @@ def checkpoint(env, model, seed):
     run = ROOT + R[env][model].format(s=seed)
     name = os.path.basename(run) if model == "lewm" and env != "fourroom" else "model"
     return f"{run}/{name}_object.ckpt"
+
+
+def rename_datasets(cfg):
+    # The release renamed the paper datasets (dropped `_2_5x` and the FourRoom `fourroom_7_21/tp35/` dirs).
+    return {k: re.sub(r"visual_antmaze_medium_(stitch_val|probing_train|probing_eval)_2_5x", r"visual_antmaze_medium_\1",
+                      v).replace("fourroom_7_21/tp35/", "") if isinstance(v, str) else v
+            for k, v in cfg.items()}

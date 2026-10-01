@@ -1,0 +1,34 @@
+cache_dir: null
+dataset_type: mixed
+output_dataset_name: visual_antmaze_medium_probing_train
+world:
+  num_envs: 10
+  image_shape:
+  - 64
+  - 64
+  maze_type: medium
+  ob_type: pixels
+  width: 64
+  height: 64
+  camera_name: back
+policy:
+  restore_path: ${oc.env:STABLEWM_HOME}/ogbench_experts/ant
+  restore_epoch: 400000
+  sample_every: 10
+  noise: null
+  seed: 0
+seed: 4072
+mixtures:
+- dataset_type: explore
+  num_traj: 1555
+  seed: 4072
+  world:
+    max_episode_steps: 401
+  policy: {}
+- dataset_type: stitch
+  num_traj: 1551
+  seed: 4073
+  world:
+    max_episode_steps: 401
+  policy: {}
+options: null

@@ -81,57 +81,56 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-eval_datasets:
-  val:
-    name: cube_single_expert_val
-    keys_to_load:
-    - pixels
-    - action
-    - observation
-    - proprio
-    - block_pos
-    - block_ori
-    - effector_pos
-    - effector_yaw
-    - gripper
-    - arm_joint_pos
-    - arm_joint_vel
-    - gripper_vel
-    keys_to_cache:
-    - action
-    - observation
-    keys_to_merge:
-      proprio: proprio
-      block_pos:
-        key: observation
-        start: 19
-        end: 22
-      block_ori:
-        key: observation
-        start: 22
-        end: 28
-      effector_pos:
-        key: observation
-        start: 12
-        end: 15
-      effector_yaw:
-        key: observation
-        start: 15
-        end: 17
-      gripper:
-        key: observation
-        start: 17
-        end: 19
-      arm_joint_pos:
-        key: observation
-        start: 0
-        end: 6
-      arm_joint_vel:
-        key: observation
-        start: 6
-        end: 12
-      gripper_vel:
-        key: proprio_gripper_vel
-    level1:
-      frameskip: 1
-      num_steps: 1
+eval_dataset:
+  name: cube_single_expert_val
+  keys_to_load:
+  - pixels
+  - action
+  - observation
+  - proprio
+  - block_pos
+  - block_ori
+  - effector_pos
+  - effector_yaw
+  - gripper
+  - arm_joint_pos
+  - arm_joint_vel
+  - gripper_vel
+  keys_to_cache:
+  - action
+  - observation
+  keys_to_merge:
+    proprio: proprio
+    block_pos:
+      key: observation
+      start: 19
+      end: 22
+    block_ori:
+      key: observation
+      start: 22
+      end: 28
+    effector_pos:
+      key: observation
+      start: 12
+      end: 15
+    effector_yaw:
+      key: observation
+      start: 15
+      end: 17
+    gripper:
+      key: observation
+      start: 17
+      end: 19
+    arm_joint_pos:
+      key: observation
+      start: 0
+      end: 6
+    arm_joint_vel:
+      key: observation
+      start: 6
+      end: 12
+    gripper_vel:
+      key: proprio_gripper_vel
+  level1:
+    frameskip: 1
+    num_steps: 1

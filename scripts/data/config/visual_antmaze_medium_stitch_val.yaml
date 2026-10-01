@@ -1,6 +1,6 @@
 cache_dir: null
-dataset_type: explore
-output_dataset_name: visual_antmaze_medium_probing_eval_explore_2_5x
+dataset_type: stitch
+output_dataset_name: visual_antmaze_medium_stitch_val
 world:
   num_envs: 10
   max_episode_steps: 401
@@ -8,18 +8,18 @@ world:
   - 64
   - 64
   maze_type: medium
-  dataset_type: explore
+  dataset_type: stitch
   ob_type: pixels
   width: 64
   height: 64
   camera_name: back
 policy:
-  dataset_type: explore
+  dataset_type: stitch
   restore_path: ${oc.env:STABLEWM_HOME}/ogbench_experts/ant
   restore_epoch: 400000
   sample_every: 10
   noise: null
   seed: 0
-seed: 5072
-num_traj: 155
+seed: 3072
+num_traj: 1250
 options: null

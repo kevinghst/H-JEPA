@@ -20,7 +20,7 @@ world:
   dataset_type: stitch
   terminate_at_goal: true
 dataset:
-  stats: visual_antmaze_medium_stitch_val_2_5x
+  stats: visual_antmaze_medium_stitch_val
   keys_to_cache:
   - action
   - xy
@@ -91,7 +91,7 @@ eval:
   goal_state_mode: xy_neutral
   eval_budget: 350
   img_size: 64
-  dataset_name: visual_antmaze_medium_stitch_val_2_5x
+  dataset_name: visual_antmaze_medium_stitch_val
   callables:
   - method: set_state
     args:

@@ -23,11 +23,11 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    `scripts/data/config/visual_antmaze_medium_explore_stitch_train.yaml` (1072) is a placeholder.
 3. FourRoom val/probing sets are exact prefixes of the train set (all collected with seed 3072).
    Planning unaffected; val loss / probing numbers inflated.
-4. Cube train/val split (9,800/200 episodes of `cube_single_expert.h5`): splitting script not
-   found. Does the LeWM download come pre-split?
-5. Dataset names kept as-is (e.g. `fourroom_7_21/tp35/fourroom_tp35_d1`). Rename?
-6. README `<LINK: ...>` placeholders to fill: Push-T data (`pusht_expert_{train,val}.h5`), Cube data
-   (`cube_single_expert_{train,val}.h5`), OGBench AntMaze expert policies (`ogbench_experts/ant`), and
+4. Cube train/val split: resolved, first 9,800 / last 200 episodes of LeWM's `cube_single_expert.h5`
+   (`scripts/data/split_cube.py`).
+5. Dataset names: AntMaze and FourRoom renamed (no `_2_5x`, no FourRoom dirs; see provenance.md). The
+   local copies still have the paper names: test the release against a data root with the new names.
+6. README `<LINK: ...>` placeholders to fill (datasets done): OGBench AntMaze expert policies (`ogbench_experts/ant`), and
    the four eval-task files (150-570 MB each, not in git; see `provenance.md`). Where to host (HF?)
 7. Planning evals are not bit-reproducible run to run on Push-T, Ant and FourRoom (same code, same
    seed: e.g. FourRoom 2-episode SR 0% vs 100%; Push-T 1 of 4 runs differed). Cube is deterministic.
@@ -39,23 +39,34 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    `lejepa_training_normalizer_v1` format tag and the `JEPA.__setstate__` shim that the
    `*_object.ckpt` / `normalizer.pt` files depend on (the legacy module aliases were not needed: all
    84 paper checkpoints load without them).
-10. DROID data hosting and license: the 256p re-encoded corpus (`droid_paths_minus16_256p.csv`,
+10. Ant probing now uses one concatenated eval set, so the paper's Ant probe numbers (depth-probes
+   figure, probing tables; `main.tex` probing-data caption says "averaged over both") are not
+   reproduced exactly. Re-run the Ant probing evals and regenerate the figures, or accept the gap?
+11. DROID data hosting and license: the 256p re-encoded corpus (`droid_paths_minus16_256p.csv`,
     `droid_val_indist_256p.csv` and their mp4 episodes; README `<LINK: DROID 256p corpus>`). The
     CSVs list absolute paths under `/mnt/vast/home/basile.terver/shared/data/DROID/droid_256p/`,
     `config/train/base/droid.yaml` hardcodes the CSV paths, and the clip manifest points into the raw
     release (`/mnt/vast/datasets/DROID/droid_raw/1.0.1/`). Where to host, and may a re-encoded DROID
     be redistributed?
-11. `fig:compute-pareto-real` TFLOPs axis: the original code measured it with `FlopCounterMode`; not ported.
+12. `fig:compute-pareto-real` TFLOPs axis: the original code measured it with `FlopCounterMode`; not ported.
     The release ships the skill-vs-(S, η) ladder only. Port the measurement or drop the axis from the
     reproduced claims?
-12. DROID planner-seed reporting: the README reports mean ± SE over train seeds, each the mean over
+13. DROID planner-seed reporting: the README reports mean ± SE over train seeds, each the mean over
     planner seeds 1/2/3 (`eval_droid.sh`). The planner-seed spread is ±4 points at S=4. Keep this, or
     report the SE over all 9 train x planner seeds?
-13. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
+14. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
     `h_jepa/assets/` symlink that holds the simulation eval tasks. Keep the separate tracked dir?
 
 ## Pending work
 
+- Datasets on HF `jepa-world-models/h-jepa` (2026-10-01): the 8 AntMaze/FourRoom `.h5` files (image columns
+  re-stored with lossless Blosc-Zstd, 90 -> 32 GB; `observation`, an exact copy of `pixels`, dropped from the
+  non-training AntMaze files; every column verified against the originals), `pusht_expert_val.h5` and
+  `SHA256SUMS`; documented in the dataset card. The Zstd files are under `/mnt/vast/home/kevin/hjepa_release_data`,
+  which also works as a `STABLEWM_HOME` with the release names.
+- Push-T / Cube training data: LeWM's HF releases. Checked 2026-10-01: LeWM's `cube_single_expert.h5` is
+  byte-identical to ours and `scripts/data/split_cube.py` reproduces our train/val files; LeWM's Push-T train file
+  plus `add_pusht_block_ori.py` equals our `pusht_expert_train.h5` in every column.
 - Full planning pass on the paper checkpoints: all 28 planning configs x 3 seeds (`eval_depth.sh` +
   `eval_cost_ladder.sh`, ~250 SLURM jobs) against the README reference tables. Only `fourroom_l3`
   seed 42 checked so far (98% = paper). Needs the user's go-ahead.
@@ -231,7 +242,7 @@ Round 4
   without `get_col_stats` (only the Ant mixture has it; the audit wrongly listed it as dead).
 - probing outputs: probe metrics are now macro NMSE (mean over target dims of MSE_d / Var_d, the
   number the depth-probes figure plots), computed in the one train/eval pass (`_run_epoch`) and
-  written to `metrics.yaml` as `levelN_probe_<col>_nmse` (`eval_mean/` = mean over eval sets). Gone:
+  written to `metrics.yaml` as `levelN_probe_<col>_nmse`. Gone:
   the second eval pass (`_evaluate_probe_dim_metrics`), the pooled NMSE, `probe_dim_metrics.csv`,
   `probe_summary_metrics.csv`, the floor columns and their W&B keys, `heads.ckpt`, `manifest.yaml`,
   `eval_metrics.yaml`, `eval_metrics_history.yaml`, `policy_train_config.yaml`, CPU image resizing
@@ -254,6 +265,14 @@ Round 5
   train on the seed-42 subset instead of their own. The collection configs
   `visual_antmaze_medium_{explore_train,stitch_train_2_5x}.yaml` became one
   `visual_antmaze_medium_explore_stitch_train.yaml` (collects an equivalent, not identical, file).
+- multiple probing eval sets (`eval_datasets:` dict, `eval_mean/` metrics, `_mean_metrics`): every
+  probing config has one `eval_dataset:`. Ant's two eval sets (155 explore + 155 stitch episodes,
+  25k transitions each) became one file, `visual_antmaze_medium_probing_eval.h5` (their
+  concatenation, 50k transitions), and one collection config. Ant probe NMSE is now normalized by
+  the combined set's target variance instead of averaging the two per-set NMSEs, so it differs from
+  the paper's Ant probing numbers (estimated -5% to +1% on `ant/9-6-1/1/seed42`); the paper evals
+  were not re-run. Metric keys `eval/<key>/...` and `eval_mean/...` became `eval/...`, and decoding
+  PNGs lost their eval-key prefix.
 - `hjepa_utils.py` cleanup (2026-09-29): the rollout loss is straight-line code (no 7-tuple
   closures), and these are gone: the missing-key / `rollout_n` / dimension / component-name checks,
   the mixed legacy+component loss-format error (component sections now take precedence), the

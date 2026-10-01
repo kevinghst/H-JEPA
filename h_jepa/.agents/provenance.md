@@ -75,15 +75,25 @@ The README tables come from the paper-figure data in the development repo
 
 ## Data
 
-- AntMaze / FourRoom collection configs in `scripts/data/config/` are the sidecar configs saved next
-  to each dataset (`$STABLEWM_HOME/*.yaml`, `$STABLEWM_HOME/fourroom_7_21/tp35/*.collection.yaml`),
-  except `visual_antmaze_medium_explore_stitch_train`, which replaces the two paper training sets.
+- Release dataset names = paper names without `_2_5x` (AntMaze `stitch_val`, `probing_train`) and
+  without the FourRoom `fourroom_7_21/tp35/` dirs; the paper files keep the old names under
+  `/mnt/vast/home/kevin/stable-wm-lejepa/datasets` (the release-check scripts map old to new).
+  Beware: that dir also holds an unrelated older `visual_antmaze_medium_stitch_val.h5` (1x), so the
+  release configs must not be run against it with `STABLEWM_HOME` pointing there.
+- AntMaze / FourRoom collection configs in `scripts/data/config/` (one per release file, same name)
+  are the sidecar configs saved next to each paper dataset (`$STABLEWM_HOME/*.yaml`,
+  `$STABLEWM_HOME/fourroom_7_21/tp35/*.collection.yaml`) with portable paths, except
+  `visual_antmaze_medium_explore_stitch_train` and `visual_antmaze_medium_probing_eval`, which each
+  replace two paper sets. `scripts/data/collect_datasets.sh` runs all eight.
 - Ant training set: the paper runs mixed `visual_antmaze_medium_explore_train` (all 12,500 episodes)
   and `visual_antmaze_medium_stitch_train_2_5x` (12,500 of 31,250 episodes, drawn with
   `subset_seed = seed`) on the fly. `visual_antmaze_medium_explore_stitch_train.h5` holds the seed-42
   draw (training columns only), so it is exactly the seed-42 models' training data; seeds 43/44
   trained on different stitch episodes. The stitch set had no sidecar, so the stitch seed in its
   collection config is a placeholder.
+- Ant probing eval set: the paper scored probes on `visual_antmaze_medium_probing_eval_{explore,stitch}_2_5x`
+  separately and averaged the two NMSEs. The release scores one concatenated file
+  (`visual_antmaze_medium_probing_eval`), so Ant probing numbers no longer match the paper exactly.
 - Eval tasks: `h_jepa/assets/eval_trajs/{ant/expert_grid_d3_n50, fourroom/fourroom_tp35_cross2_goal75_n50_d1,
   ogbench/goal_offset_20_pickup_val, pusht/goal_offset_75_val}.pt`, the files the paper evals loaded.
 

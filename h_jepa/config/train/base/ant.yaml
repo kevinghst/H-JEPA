@@ -4,7 +4,7 @@ data:
   dataset:
     name: visual_antmaze_medium_explore_stitch_train
     subset_seed: ${seed}
-    val_name: visual_antmaze_medium_stitch_val_2_5x
+    val_name: visual_antmaze_medium_stitch_val
     val_total_transitions: 201000
     keys_to_load:
     - pixels

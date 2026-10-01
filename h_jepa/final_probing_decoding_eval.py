@@ -96,21 +96,10 @@ def _normalize_uint8_images_on_device(batch):
 
 def _build_datasets(cfg, normalizer_artifact):
     train_dataset_cfg = _plain_container(cfg.train_dataset)
-    eval_dataset_cfgs = _plain_container(cfg.eval_datasets)
 
     cache_dir = _cache_dir(cfg)
-    train_dataset = build_hdf5_dataset(
-        train_dataset_cfg,
-        cache_dir=cache_dir,
-    )
-
-    eval_datasets = {}
-    for eval_key, eval_dataset_cfg in eval_dataset_cfgs.items():
-        eval_dataset = build_hdf5_dataset(
-            eval_dataset_cfg,
-            cache_dir=cache_dir,
-        )
-        eval_datasets[eval_key] = eval_dataset
+    train_dataset = build_hdf5_dataset(train_dataset_cfg, cache_dir=cache_dir)
+    eval_dataset = build_hdf5_dataset(_plain_container(cfg.eval_dataset), cache_dir=cache_dir)
 
     # Stored images already match img_size; uint8 pixels are normalized on device.
     extra_transforms = [
@@ -121,9 +110,8 @@ def _build_datasets(cfg, normalizer_artifact):
 
     transform = Compose(*extra_transforms)
     train_dataset.transform = transform
-    for eval_dataset in eval_datasets.values():
-        eval_dataset.transform = transform
-    return train_dataset, eval_datasets
+    eval_dataset.transform = transform
+    return train_dataset, eval_dataset
 
 
 def _loader_cfg(cfg, *, train: bool) -> dict:
@@ -522,26 +510,7 @@ def _metric_name(raw_key: str) -> str:
     return raw_key
 
 
-def _mean_metrics(metrics_by_key: dict[str, dict[str, float]]) -> dict[str, float]:
-    if not metrics_by_key:
-        return {}
-
-    metric_names = sorted(
-        {metric for metrics in metrics_by_key.values() for metric in metrics}
-    )
-    mean_metrics = {}
-    for metric in metric_names:
-        values = [
-            metrics[metric]
-            for metrics in metrics_by_key.values()
-            if metric in metrics and math.isfinite(float(metrics[metric]))
-        ]
-        if values:
-            mean_metrics[metric] = _mean(values)
-    return mean_metrics
-
-
-def _format_epoch_metrics(train_metrics, eval_metrics_by_key, prefix):
+def _format_epoch_metrics(train_metrics, eval_metrics, prefix):
     formatted = {}
     formatted[_prefixed(prefix, "train/loss_epoch")] = train_metrics.get("loss", math.nan)
 
@@ -549,31 +518,15 @@ def _format_epoch_metrics(train_metrics, eval_metrics_by_key, prefix):
         if key != "loss":
             formatted[_prefixed(prefix, f"train/{_metric_name(key)}")] = value
 
-    for eval_key, eval_metrics in eval_metrics_by_key.items():
-        formatted[_prefixed(prefix, f"eval/{eval_key}/loss")] = eval_metrics.get(
-            "loss",
-            math.nan,
-        )
-        for key, value in eval_metrics.items():
-            if key == "loss":
-                continue
-            formatted[_prefixed(prefix, f"eval/{eval_key}/{_metric_name(key)}")] = value
-
-    eval_mean_metrics = _mean_metrics(eval_metrics_by_key)
-    formatted[_prefixed(prefix, "eval_mean/loss")] = eval_mean_metrics.get(
-        "loss",
-        math.nan,
-    )
-    for key, value in eval_mean_metrics.items():
-        if key == "loss":
-            continue
-        formatted[_prefixed(prefix, f"eval_mean/{_metric_name(key)}")] = value
+    formatted[_prefixed(prefix, "eval/loss")] = eval_metrics.get("loss", math.nan)
+    for key, value in eval_metrics.items():
+        if key != "loss":
+            formatted[_prefixed(prefix, f"eval/{_metric_name(key)}")] = value
 
     return formatted
 
 
-def _save_decoder_visualizations(output_dir: Path, heads, eval_datasets, device) -> None:
-    eval_key, dataset = next(iter(eval_datasets.items()))
+def _save_decoder_visualizations(output_dir: Path, heads, dataset, device) -> None:
     figures = _decoder_visualization_figures(heads, dataset, device)
     if not figures:
         return
@@ -584,7 +537,7 @@ def _save_decoder_visualizations(output_dir: Path, heads, eval_datasets, device)
         filename = key.removeprefix(f"{FINAL_PROBING_DECODING_EVAL_PREFIX}/")
         filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", filename).strip("_")
         try:
-            fig.savefig(decodings_dir / f"{eval_key}_{filename}.png", dpi=150, bbox_inches="tight")
+            fig.savefig(decodings_dir / f"{filename}.png", dpi=150, bbox_inches="tight")
         finally:
             plt.close(fig)
 
@@ -680,17 +633,14 @@ def run_final_probing_decoding_eval(
     seed = int(cfg.get("seed", 42))
     pl.seed_everything(seed, workers=True)
 
-    train_dataset, eval_datasets = _build_datasets(cfg, normalizer_artifact)
+    train_dataset, eval_dataset = _build_datasets(cfg, normalizer_artifact)
     generator = torch.Generator().manual_seed(seed)
     train_loader = DataLoader(
         train_dataset,
         **_loader_cfg(cfg, train=True),
         generator=generator,
     )
-    eval_loaders = {
-        key: DataLoader(dataset, **_loader_cfg(cfg, train=False))
-        for key, dataset in eval_datasets.items()
-    }
+    eval_loader = DataLoader(eval_dataset, **_loader_cfg(cfg, train=False))
 
     device_cfg = str(cfg.get("device", "auto"))
     if device_cfg == "auto":
@@ -705,10 +655,7 @@ def run_final_probing_decoding_eval(
     ).to(device)
     optimizer = _optimizer(heads, cfg)
     train_probe_variances = _probe_variances(heads, train_dataset, device)
-    eval_probe_variances = {
-        key: _probe_variances(heads, dataset, device)
-        for key, dataset in eval_datasets.items()
-    }
+    eval_probe_variances = _probe_variances(heads, eval_dataset, device)
 
     wandb_run = None
     if logger is None:
@@ -728,37 +675,30 @@ def run_final_probing_decoding_eval(
             limit_batches=train_batch_limit,
             optimizer=optimizer,
         )
-        eval_metrics_by_key = {
-            key: _run_epoch(
-                heads,
-                loader,
-                device,
-                eval_probe_variances[key],
-                limit_batches=eval_batch_limit,
-            )
-            for key, loader in eval_loaders.items()
-        }
+        eval_metrics = _run_epoch(
+            heads,
+            eval_loader,
+            device,
+            eval_probe_variances,
+            limit_batches=eval_batch_limit,
+        )
         final_metrics = _format_epoch_metrics(
             train_metrics,
-            eval_metrics_by_key,
+            eval_metrics,
             FINAL_PROBING_DECODING_EVAL_PREFIX,
         )
         step = None if log_step is None else int(log_step) + epoch
         _log_metrics(logger, wandb_run, final_metrics, step)
 
-        eval_mean_loss = final_metrics.get(
-            f"{FINAL_PROBING_DECODING_EVAL_PREFIX}/eval_mean/loss",
-            math.nan,
-        )
         logging.info(
             "final_probing_decoding_eval epoch "
             f"{epoch}/{epochs}: train_loss={train_metrics.get('loss'):.6f}, "
-            f"eval_mean_loss={eval_mean_loss:.6f}"
+            f"eval_loss={eval_metrics.get('loss'):.6f}"
         )
 
     if bool(cfg.get("save_artifacts", True)):
         output_dir.mkdir(parents=True, exist_ok=True)
-        _save_decoder_visualizations(output_dir, heads, eval_datasets, device)
+        _save_decoder_visualizations(output_dir, heads, eval_dataset, device)
         _save_artifacts(heads, output_dir, cfg, final_metrics)
         logging.info(f"Saved final probing/decoding eval artifacts to {output_dir}")
     if wandb_run is not None:
