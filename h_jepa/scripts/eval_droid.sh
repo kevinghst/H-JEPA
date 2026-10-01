@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Offline DROID planning evals behind fig:cls-ladder-droid: the paper planner cell of
-# each model on the 16 evaluation clips, with planner seeds 1/2/3 for every trained
-# model, then the mean Frechet fidelity per model. Checkpoints come from `ENVS=droid train_all.sh`
-# ($STABLEWM_HOME/ckpts/droid/droid_<model>/seed<seed>/); H-JEPA is read at epoch 100.
+# Offline DROID planning evals behind fig:cls-ladder-droid: the release planner cell of
+# each model (the config defaults, README §5.3) on the 16 evaluation clips, with planner
+# seeds 1/2/3 for every trained model, then the mean Frechet fidelity per model. Checkpoints
+# come from `ENVS=droid train_all.sh` ($STABLEWM_HOME/ckpts/droid/droid_<model>/seed<seed>/).
 # The eval config follows the model name (lewm*: droid_flat, *_l<N>*: droid_l<N>).
 # EPOCHS="50 100 150" evaluates droid_<model>_epoch_<N>_object.ckpt instead, into
 # eval_<plan>/epoch_<N>/, skipping missing checkpoints.
@@ -16,11 +16,6 @@ EPOCHS=${EPOCHS:-""}
 RUNS=${RUNS:-$STABLEWM_HOME/ckpts/droid}
 
 for model in $MODELS; do
-  case $model in
-    lewm*) cell="--lr 0.01 --num-samples 16" ;;
-    hwm*) cell="--lr 0.01 0.1 --num-samples 16" ;;
-    hjepa*) cell="--lr 0.03 0.01 --num-samples 4" ;;
-  esac
   plan=flat
   [[ $model =~ _l([0-9]) ]] && plan=l${BASH_REMATCH[1]}
   for seed in $SEEDS; do
@@ -28,7 +23,6 @@ for model in $MODELS; do
     for epoch in ${EPOCHS:-final}; do
       if [[ $epoch == final ]]; then
         ckpt="$run/droid_${model}_object.ckpt" out="$run/eval_${plan}"
-        [[ $model == hjepa_l2 ]] && ckpt="$run/droid_hjepa_l2_epoch_100_object.ckpt"
       else
         ckpt="$run/droid_${model}_epoch_${epoch}_object.ckpt" out="$run/eval_${plan}/epoch_${epoch}"
       fi
@@ -37,8 +31,8 @@ for model in $MODELS; do
         continue
       fi
       for ps in $PLAN_SEEDS; do
-        python droid_plan_eval.py --ckpt "$ckpt" --config "droid_${plan}" $cell --seed "$ps" \
-          --out "$out" --tag "plan_seed${ps}"
+        python eval.py --config-name "droid_${plan}" policy="$ckpt" seed="$ps" output.dir="$out/plan_seed${ps}" \
+          hydra.run.dir="$out/plan_seed${ps}/hydra"
       done
     done
   done

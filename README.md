@@ -368,7 +368,7 @@ $STABLEWM_HOME/ckpts/droid/
   droid_<model>/                    <model> in {lewm, hwm_l2, hjepa_l2}
     seed<seed>/                     <seed> in {1, 1000, 10000}
       droid_<model>_object.ckpt     final model
-      droid_<model>_epoch_<N>_object.ckpt   snapshot every save_every_n_epochs (H-JEPA: epoch 100)
+      droid_<model>_epoch_<N>_object.ckpt   snapshot every save_every_n_epochs
 ```
 
 ### 5.3) Planning evaluation
@@ -393,22 +393,26 @@ distance between cumulative xyz paths, averaged over the 16 clips. The eval writ
 (`frechet/skill_mean`) over every clip present, so one-clip shards (`--start-index k --num-eval 1`)
 can share one output dir.
 
-| Model | Checkpoint | Planner | S | η (level 1, level 2) |
-|---|---|---|---|---|
-| LeWM + IDM | `droid_lewm_object.ckpt` | flat | 16 | 0.01 |
-| HWM | `droid_hwm_l2_object.ckpt` | `--hier` | 16 | 0.01, 0.1 |
-| H-JEPA | `droid_hjepa_l2_epoch_100_object.ckpt` | `--hier` | 4 | 0.03, 0.01 |
+| Model | Checkpoint | Planner | S | η (level 1, level 2) | planner TFLOPs / episode |
+|---|---|---|---|---|---|
+| LeWM + IDM | `droid_lewm_object.ckpt` | flat | 32 | 0.01 | 13.9 |
+| HWM | `droid_hwm_l2_object.ckpt` | `--hier` | 16, 16 | 0.01, 0.3 | 11.4 |
+| H-JEPA | `droid_hjepa_l2_object.ckpt` | `--hier` | 16, 16 | 0.01, 0.3 | 11.6 |
 
 `scripts/eval_droid.sh` runs these cells with planner seeds 1, 2 and 3 on every trained model, writes
 `droid/droid_<model>/seed<seed>/eval_{flat,l2}/plan_seed<ps>/eval.csv` and prints the mean ± SE per model.
-The ladder of `fig:compute-pareto-real` is the same eval on the same checkpoints with
-`--num-samples`, `--lr` and `--l2-lr` swept.
+The ladder of `fig:compute-pareto-real` is the same eval on the same checkpoints with only the number of
+samples swept (per level for the two-level models), every other planner setting fixed as above.
 
 | | Paper | This release |
 |---|---|---|
-| LeWM + IDM | 34.06 ± 1.26 | |
-| HWM | 34.96 ± 0.32 | |
-| H-JEPA | 39.95 ± 2.91 | |
+| LeWM + IDM | 34.06 ± 1.26 | 32.52 ± 1.93 |
+| HWM | 34.96 ± 0.32 | 33.67 ± 2.85 |
+| H-JEPA | 39.95 ± 2.91 | 37.60 ± 1.98 |
+
+Fréchet fidelity (%), mean ± SE over train seeds 1, 1000 and 10000 of the mean over planner seeds 1, 2 and 3.
+"This release" uses the matched-compute cells of the table above (11-14 planner TFLOPs per episode) and the
+release recipe (level-2 action SIGReg 0.005); "Paper" uses each model's own planner cell of the paper.
 
 The LeWM bar without IDM in `fig:cls-ladder-droid` is the zero-action floor, not a trained model.
 
