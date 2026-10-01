@@ -468,7 +468,8 @@ class JEPA(nn.Module):
             with torch.no_grad():
                 _goal = self.encode(_goal)
 
-            info_dict["goal_embed_0"] = _goal["embed_0"]
+            # keep the sample axis, (B, 1, T, D): expand_as against (B, S, W, D) is wrong for B > 1
+            info_dict["goal_embed_0"] = _goal["embed_0"].unsqueeze(1)
 
         info_dict = self.rollout(info_dict, action_candidates)
 
