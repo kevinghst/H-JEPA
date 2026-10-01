@@ -184,12 +184,6 @@ Total loss per level: `pred_loss + sigreg_weight * sigreg_loss`.
 
 Total loss: sum across all trainable levels.
 
-**3. Probes**
-
-`OnlineProbe` callbacks attach small MLPs to `embed_{level}` and `pred_embed_{level}` to predict non-pixel quantities (e.g., proprio, state). These are trained in parallel during training as a representation quality metric and do not affect the world model gradients.
-
-If a higher-level target is chunked, probes use the last element in the chunk as the target. This matches the temporal alignment used by the upper-level embedding and avoids asking a single abstract state to reconstruct the whole local window.
-
 ---
 
 ## 3. HierarchicalSolver (Planning)

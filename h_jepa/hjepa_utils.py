@@ -2,26 +2,6 @@ import torch
 from torch.nn import functional as F
 
 
-def probe_target_key(col: str, level: int) -> str:
-    return f"{col}_level{level}_probe_target"
-
-
-def probe_targets(target):
-    if target.ndim >= 4:
-        return target[:, :, -1].contiguous()
-    return target.contiguous()
-
-
-def add_probe_targets(output, cfg) -> None:
-    for level in range(1, int(cfg.num_levels) + 1):
-        for col in cfg.data.dataset.keys_to_load:
-            if col.startswith("pixels") or col == "action":
-                continue
-            target_key = f"{col}_level{level}"
-            if target_key in output:
-                output[probe_target_key(col, level)] = probe_targets(output[target_key])
-
-
 def _loss_components(loss_cfg):
     components = {name: loss_cfg[name] for name in ("embed", "pixel", "proprio") if name in loss_cfg}
     return components or {"embed": loss_cfg}
@@ -83,7 +63,6 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
     normalize_batch(batch)
 
     output = self.model.encode_hierarchical(batch)
-    add_probe_targets(output, cfg)
 
     total_loss = None
     for level in range(1, int(cfg.num_levels) + 1):
@@ -101,12 +80,10 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
             pred_passes = jepa.parallel_unroll(emb, act_emb, int(nsteps))
             pred_emb = pred_passes.mean(dim=0)
             tgt_emb = emb
-            output[f"pred_embed_{level}"] = pred_passes[-1]
         elif rollout_n == 1:
             teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
             pred_emb = teacher_pred
             tgt_emb = emb[:, 1 : history_size + 1]
-            output[f"pred_embed_{level}"] = torch.cat([emb[:, :1], teacher_pred], dim=1)
         else:
             teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
             rollout = emb[:, :history_size]
@@ -117,7 +94,6 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
                 rollout = torch.cat([rollout, pred_step], dim=1)
             pred_emb = rollout[:, history_size:]
             tgt_emb = emb[:, history_size : history_size + rollout_n]
-            output[f"pred_embed_{level}"] = rollout
 
         with torch.no_grad():
             output[f"mse_loss{level_suffix}"] = F.mse_loss(pred_emb, tgt_emb)
@@ -384,4 +360,4 @@ def create_world_model(cfg):
         if float(level_cfg.get("action_sigreg_coeff", 0.0)) > 0:
             losses[_sigreg_module_name("action", level)] = SIGReg()
 
-    return world_model, losses, embed_dims
+    return world_model, losses

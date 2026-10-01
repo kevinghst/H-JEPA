@@ -305,6 +305,15 @@ Round 6 (2026-09-30, Kevin's PR review)
   through a module/class-renaming unpickler, or rebuild from the config and load the state_dict).
 - mentions of the original training code by name in code, configs and docs (`provenance.md` keeps the source-run paths).
 
+Round 7 (2026-10-01)
+- in-training online probes (`spt.callbacks.OnlineProbe` on `embed_{level}` / `pred_embed_{level}`, W&B-only
+  diagnostics; inputs detached, own optimizer), with `add_probe_targets` / `probe_targets` / `probe_target_key`,
+  the `pred_embed_{level}` outputs of `hjepa_forward`, `create_world_model`'s `embed_dims` return value and the
+  unread DROID `levelN.probes.inputs` keys. Reported probe numbers come from `final_probing_decoding_eval` (fresh
+  heads on the frozen model), unaffected. fwd_test bit-identical, verify_train output unchanged, Cube smoke run ok.
+  Old `lightning_resume/last.ckpt` files still hold the probe modules (`callbacks_modules`); weights / object
+  checkpoints are unaffected.
+
 DROID (not ported from the original code)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;
   `tab:sf-idm0`; varcomp; selective-bars; the TFLOPs measurement of `fig:compute-pareto-real`

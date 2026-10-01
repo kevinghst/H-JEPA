@@ -7,18 +7,11 @@ import lightning as pl
 import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
-import torchmetrics
 from loguru import logger as logging
 from omegaconf import OmegaConf
-from torch import nn
 from torch.utils.data import DataLoader
 
-from hjepa_utils import (
-    create_world_model,
-    hjepa_forward,
-    probe_target_key as _probe_target_key,
-)
-from models.probers import build_prober
+from hjepa_utils import create_world_model, hjepa_forward
 from utils import (
     ModelObjectCallBack,
     DebugArtifactCleanupCallback,
@@ -203,7 +196,7 @@ def run(cfg):
     ##############################
 
     normalizer_artifact = build_normalizer_artifact(cfg, train_dataset)
-    world_model, losses, embed_dims = create_world_model(cfg)
+    world_model, losses = create_world_model(cfg)
     world_model.normalizer_artifact = normalizer_artifact
     models = {
         "model": world_model,
@@ -310,32 +303,6 @@ def run(cfg):
         ),
     )
 
-    probes = []
-    for level in range(1, int(cfg.num_levels) + 1):
-        for col in cfg.data.dataset.keys_to_load:
-            if col.startswith("pixels") or col in ["action"]:
-                continue
-
-            output_dim = train_dataset.get_dim(col)
-            for name, probe_input in (
-                (f"level{level}_probe_{col}", f"embed_{level}"),
-                (f"level{level}_pred_probe_{col}", f"pred_embed_{level}"),
-            ):
-                probes.append(
-                    spt.callbacks.OnlineProbe(
-                        world_model,
-                        target=_probe_target_key(col, level),
-                        input=probe_input,
-                        name=name,
-                        probe=build_prober(
-                            input_dim=embed_dims[level],
-                            output_dim=output_dim,
-                        ),
-                        loss=nn.MSELoss(),
-                        metrics=torchmetrics.regression.MeanSquaredError(),
-                    )
-                )
-
     resume_file = run_dir / "lightning_resume" / "last.ckpt"
     resume_every = cfg.get("resume_every_n_steps", 2000)
     resume_callbacks = [ResumeCheckpoint(resume_file, resume_every)] if resume_every else []
@@ -350,7 +317,6 @@ def run(cfg):
         planning_eval_callback,
         final_probing_decoding_eval_callback,
         lr_callback,
-        *probes,
         ],
         logger=logger,
         enable_checkpointing=False,

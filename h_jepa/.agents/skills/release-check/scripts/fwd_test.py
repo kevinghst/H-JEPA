@@ -37,7 +37,7 @@ def run(out_path):
                     setattr(cfg[f"level{level}"].wm, f"{col}_dim", dim)
         torch.manual_seed(0)
         torch.cuda.manual_seed_all(0)
-        model, losses, _ = create_world_model(cfg)
+        model, losses = create_world_model(cfg)
         model = model.cuda().train()
 
         class Module:
