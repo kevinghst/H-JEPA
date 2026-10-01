@@ -62,18 +62,31 @@ All datasets are HDF5 files under `$STABLEWM_HOME`.
 
 | Environment | Files | Source |
 |---|---|---|
-| Push-T | `pusht_expert_train.h5`, `pusht_expert_val.h5` | download (LeWM) |
-| OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) |
+| Push-T | `pusht_expert_train.h5`, `pusht_expert_val.h5` | download (LeWM + HF) |
+| OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) + split |
 | Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val,probing_train,probing_eval}.h5` | download (HF) or generate |
 | FourRoom Distractors | `fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | download (HF) or generate |
 
-**Push-T and Cube.** Follow the LeWM data instructions: `<LINK: Push-T data>`, `<LINK: Cube data>`.
-The Push-T probing config also reads a `block_ori` column (`[cos, sin]` of the block angle). If the
-downloaded files lack it, add it in place (from the repository root):
+**Push-T and Cube.** The training data is LeWM's release
+([`quentinll/lewm-pusht`](https://huggingface.co/datasets/quentinll/lewm-pusht),
+[`quentinll/lewm-cube`](https://huggingface.co/datasets/quentinll/lewm-cube), MIT). The Push-T
+validation set is in our release. From the repository root:
 
 ```bash
-python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5 $STABLEWM_HOME/pusht_expert_val.h5
+hf download quentinll/lewm-pusht --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
+hf download quentinll/lewm-cube --repo-type dataset --local-dir $STABLEWM_HOME --include "*.zst"
+hf download jepa-world-models/h-jepa pusht_expert_val.h5 --repo-type dataset --local-dir $STABLEWM_HOME
+unzstd $STABLEWM_HOME/pusht_expert_train.h5.zst
+tar -I unzstd -xf $STABLEWM_HOME/cube_single_expert.tar.zst -C $STABLEWM_HOME
+python scripts/data/add_pusht_block_ori.py $STABLEWM_HOME/pusht_expert_train.h5
+python scripts/data/split_cube.py
 ```
+
+`add_pusht_block_ori.py` adds the `block_ori` column (`[cos, sin]` of the block angle) that the
+Push-T probing config reads; the validation file already has it. `split_cube.py` writes
+`cube_single_expert_train.h5` (first 9,800 episodes) and `cube_single_expert_val.h5` (last 200);
+the `.zst` archives and `cube_single_expert.h5` can be deleted afterwards. The Push-T validation
+set was converted from DINO-WM's Push-T validation data with `scripts/data/convert_pusht_noise_to_h5.py`.
 
 **Visual AntMaze and FourRoom Distractors.** Download the eight files from
 [`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):

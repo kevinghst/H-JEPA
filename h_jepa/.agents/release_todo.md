@@ -23,12 +23,11 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    `scripts/data/config/visual_antmaze_medium_explore_stitch_train.yaml` (1072) is a placeholder.
 3. FourRoom val/probing sets are exact prefixes of the train set (all collected with seed 3072).
    Planning unaffected; val loss / probing numbers inflated.
-4. Cube train/val split (9,800/200 episodes of `cube_single_expert.h5`): splitting script not
-   found. Does the LeWM download come pre-split?
+4. Cube train/val split: resolved, first 9,800 / last 200 episodes of LeWM's `cube_single_expert.h5`
+   (`scripts/data/split_cube.py`).
 5. Dataset names: AntMaze and FourRoom renamed (no `_2_5x`, no FourRoom dirs; see provenance.md). The
    local copies still have the paper names: test the release against a data root with the new names.
-6. README `<LINK: ...>` placeholders to fill: Push-T data (`pusht_expert_{train,val}.h5`), Cube data
-   (`cube_single_expert_{train,val}.h5`), OGBench AntMaze expert policies (`ogbench_experts/ant`), and
+6. README `<LINK: ...>` placeholders to fill (datasets done): OGBench AntMaze expert policies (`ogbench_experts/ant`), and
    the four eval-task files (150-570 MB each, not in git; see `provenance.md`). Where to host (HF?)
 7. Planning evals are not bit-reproducible run to run on Push-T, Ant and FourRoom (same code, same
    seed: e.g. FourRoom 2-episode SR 0% vs 100%; Push-T 1 of 4 runs differed). Cube is deterministic.
@@ -46,8 +45,14 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 
 ## Pending work
 
-- AntMaze + FourRoom datasets uploaded 2026-10-01 to HF `jepa-world-models/h-jepa` (8 `.h5` + `SHA256SUMS`,
-  checksums verified on the Hub). Dataset card section still to add (draft: `h_jepa/logs/hf_upload/card_sections.md`).
+- Datasets on HF `jepa-world-models/h-jepa` (2026-10-01): the 8 AntMaze/FourRoom `.h5` files (image columns
+  re-stored with lossless Blosc-Zstd, 90 -> 32 GB; `observation`, an exact copy of `pixels`, dropped from the
+  non-training AntMaze files; every column verified against the originals), `pusht_expert_val.h5` and
+  `SHA256SUMS`; documented in the dataset card. The Zstd files are under `/mnt/vast/home/kevin/hjepa_release_data`,
+  which also works as a `STABLEWM_HOME` with the release names.
+- Push-T / Cube training data: LeWM's HF releases. Checked 2026-10-01: LeWM's `cube_single_expert.h5` is
+  byte-identical to ours and `scripts/data/split_cube.py` reproduces our train/val files; LeWM's Push-T train file
+  plus `add_pusht_block_ori.py` equals our `pusht_expert_train.h5` in every column.
 - Full planning pass on the paper checkpoints: all 28 planning configs x 3 seeds (`eval_depth.sh` +
   `eval_cost_ladder.sh`, ~250 SLURM jobs) against the README reference tables. Only `fourroom_l3`
   seed 42 checked so far (98% = paper). Needs the user's go-ahead.
