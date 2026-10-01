@@ -28,7 +28,7 @@ wandb:
     id: null
     resume: allow
 train_dataset:
-  name: visual_antmaze_medium_probing_train_2_5x
+  name: visual_antmaze_medium_probing_train
   total_transitions: 500000
   keys_to_load:
   - pixels
@@ -50,50 +50,26 @@ train_dataset:
   level1:
     frameskip: 1
     num_steps: 1
-eval_datasets:
-  explore:
-    name: visual_antmaze_medium_probing_eval_explore_2_5x
-    total_transitions: 25000
-    keys_to_load:
-    - pixels
-    - action
-    - xy
-    - qpos
+eval_dataset:
+  name: visual_antmaze_medium_probing_eval
+  total_transitions: 50000
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - qpos
+  - qvel
+  - proprio
+  keys_to_cache:
+  - action
+  - xy
+  - qpos
+  - qvel
+  keys_to_merge:
+    proprio:
+    - key: qpos
+      start: 2
     - qvel
-    - proprio
-    keys_to_cache:
-    - action
-    - xy
-    - qpos
-    - qvel
-    keys_to_merge:
-      proprio:
-      - key: qpos
-        start: 2
-      - qvel
-    level1:
-      frameskip: 1
-      num_steps: 1
-  stitch:
-    name: visual_antmaze_medium_probing_eval_stitch_2_5x
-    total_transitions: 25000
-    keys_to_load:
-    - pixels
-    - action
-    - xy
-    - qpos
-    - qvel
-    - proprio
-    keys_to_cache:
-    - action
-    - xy
-    - qpos
-    - qvel
-    keys_to_merge:
-      proprio:
-      - key: qpos
-        start: 2
-      - qvel
-    level1:
-      frameskip: 1
-      num_steps: 1
+  level1:
+    frameskip: 1
+    num_steps: 1

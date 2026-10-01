@@ -16,7 +16,7 @@ from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).parent))
 from cdiff import flat
-from runs import R, ROOT
+from runs import R, ROOT, rename_datasets
 
 CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "config" / "train")
 IGNORED = ("sweep", "subdir", "output_model_name", "wandb", "planning_eval", "final_probing_decoding_eval",
@@ -54,7 +54,7 @@ def main():
                 for seed in args.seeds:
                     cfg = compose(config_name=f"{env}_{model}", overrides=[f"seed={seed}"])
                     A = flat(OmegaConf.to_container(cfg, resolve=False))
-                    B = rename_action_keys(flat(yaml.safe_load(open(ROOT + path.format(s=seed) + "/config.yaml"))))
+                    B = rename_datasets(rename_action_keys(flat(yaml.safe_load(open(ROOT + path.format(s=seed) + "/config.yaml")))))
                     if "data.dataset.sources" in B:
                         # Ant: the mix's transition budget is now the whole pre-built train file
                         del B["data.dataset.total_transitions"]

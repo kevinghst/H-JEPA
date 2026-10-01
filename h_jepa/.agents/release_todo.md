@@ -25,7 +25,8 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    Planning unaffected; val loss / probing numbers inflated.
 4. Cube train/val split (9,800/200 episodes of `cube_single_expert.h5`): splitting script not
    found. Does the LeWM download come pre-split?
-5. Dataset names kept as-is (e.g. `fourroom_7_21/tp35/fourroom_tp35_d1`). Rename?
+5. Dataset names: AntMaze and FourRoom renamed (no `_2_5x`, no FourRoom dirs; see provenance.md). The
+   local copies still have the paper names: test the release against a data root with the new names.
 6. README `<LINK: ...>` placeholders to fill: Push-T data (`pusht_expert_{train,val}.h5`), Cube data
    (`cube_single_expert_{train,val}.h5`), OGBench AntMaze expert policies (`ogbench_experts/ant`), and
    the four eval-task files (150-570 MB each, not in git; see `provenance.md`). Where to host (HF?)
@@ -39,6 +40,9 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    `lejepa_training_normalizer_v1` format tag and the `JEPA.__setstate__` shim that the
    `*_object.ckpt` / `normalizer.pt` files depend on (the legacy module aliases were not needed: all
    84 paper checkpoints load without them).
+10. Ant probing now uses one concatenated eval set, so the paper's Ant probe numbers (depth-probes
+   figure, probing tables; `main.tex` probing-data caption says "averaged over both") are not
+   reproduced exactly. Re-run the Ant probing evals and regenerate the figures, or accept the gap?
 
 ## Pending work
 
@@ -155,7 +159,7 @@ Round 4
   without `get_col_stats` (only the Ant mixture has it; the audit wrongly listed it as dead).
 - probing outputs: probe metrics are now macro NMSE (mean over target dims of MSE_d / Var_d, the
   number the depth-probes figure plots), computed in the one train/eval pass (`_run_epoch`) and
-  written to `metrics.yaml` as `levelN_probe_<col>_nmse` (`eval_mean/` = mean over eval sets). Gone:
+  written to `metrics.yaml` as `levelN_probe_<col>_nmse`. Gone:
   the second eval pass (`_evaluate_probe_dim_metrics`), the pooled NMSE, `probe_dim_metrics.csv`,
   `probe_summary_metrics.csv`, the floor columns and their W&B keys, `heads.ckpt`, `manifest.yaml`,
   `eval_metrics.yaml`, `eval_metrics_history.yaml`, `policy_train_config.yaml`, CPU image resizing
@@ -179,6 +183,14 @@ Round 5
   train on the seed-42 subset instead of their own. The collection configs
   `visual_antmaze_medium_{explore_train,stitch_train_2_5x}.yaml` became one
   `visual_antmaze_medium_explore_stitch_train.yaml` (collects an equivalent, not identical, file).
+- multiple probing eval sets (`eval_datasets:` dict, `eval_mean/` metrics, `_mean_metrics`): every
+  probing config has one `eval_dataset:`. Ant's two eval sets (155 explore + 155 stitch episodes,
+  25k transitions each) became one file, `visual_antmaze_medium_probing_eval.h5` (their
+  concatenation, 50k transitions), and one collection config. Ant probe NMSE is now normalized by
+  the combined set's target variance instead of averaging the two per-set NMSEs, so it differs from
+  the paper's Ant probing numbers (estimated -5% to +1% on `ant/9-6-1/1/seed42`); the paper evals
+  were not re-run. Metric keys `eval/<key>/...` and `eval_mean/...` became `eval/...`, and decoding
+  PNGs lost their eval-key prefix.
 - `hjepa_utils.py` cleanup (2026-09-29): the rollout loss is straight-line code (no 7-tuple
   closures), and these are gone: the missing-key / `rollout_n` / dimension / component-name checks,
   the mixed legacy+component loss-format error (component sections now take precedence), the

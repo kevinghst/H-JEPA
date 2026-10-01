@@ -12,7 +12,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 from cdiff import flat
-from runs import ROOT
+from runs import ROOT, rename_datasets
 
 EVAL_DIR = Path(__file__).resolve().parents[4] / "config" / "eval"
 DEPTH = {  # budget-100 selections from the compute_depth sweeps
@@ -45,7 +45,7 @@ def source(env, planner):
 for env in DIRS:
     for planner in ("flat", "l2", "l3", "l4", "l2_project", "l3_project", "l4_project"):
         A = flat(yaml.safe_load(open(EVAL_DIR / f"{env}_{planner}.yaml")))
-        B = flat(yaml.safe_load(open(source(env, planner))))
+        B = rename_datasets(flat(yaml.safe_load(open(source(env, planner)))))
         diffs = [(k, A.get(k, "<none>"), B.get(k, "<none>")) for k in sorted(set(A) | set(B))
                  if not k.startswith(IGNORED) and not any(re.fullmatch(p, k) for p in REMOVED)
                  and str(A.get(k, "<none>")) != str(B.get(k, "<none>"))]

@@ -2,8 +2,8 @@
 # FourRoom Distractors: settings shared by all seven models.
 data:
   dataset:
-    name: fourroom_7_21/tp35/fourroom_tp35_d1
-    val_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
+    name: fourroom_tp35_d1
+    val_name: fourroom_tp35_d1_val
     keys_to_load:
     - pixels
     - action

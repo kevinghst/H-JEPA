@@ -43,7 +43,7 @@ world:
   history_size: 1
   frame_skip: 1
 dataset:
-  stats: fourroom_7_21/tp35/fourroom_tp35_d1
+  stats: fourroom_tp35_d1
   keys_to_cache:
   - action
   - xy
@@ -151,7 +151,7 @@ eval:
   goal_offset_steps: 60
   eval_budget: 210
   img_size: 224
-  dataset_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
+  dataset_name: fourroom_tp35_d1_val
   callables:
   - method: _set_state
     args:

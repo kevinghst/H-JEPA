@@ -28,7 +28,7 @@ wandb:
     id: null
     resume: allow
 train_dataset:
-  name: fourroom_7_21/tp35/fourroom_tp35_d1_probing
+  name: fourroom_tp35_d1_probing
   keys_to_load:
   - pixels
   - action
@@ -44,21 +44,20 @@ train_dataset:
     frameskip: 1
     num_steps: 1
   total_transitions: 160000
-eval_datasets:
-  val:
-    name: fourroom_7_21/tp35/fourroom_tp35_d1_probing_val
-    keys_to_load:
-    - pixels
-    - action
-    - xy
-    - distractor0_xy
-    - min_distractor_dist
-    keys_to_cache:
-    - action
-    - xy
-    - distractor0_xy
-    - min_distractor_dist
-    level1:
-      frameskip: 1
-      num_steps: 1
-    total_transitions: 40000
+eval_dataset:
+  name: fourroom_tp35_d1_probing_val
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  keys_to_cache:
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  level1:
+    frameskip: 1
+    num_steps: 1
+  total_transitions: 40000

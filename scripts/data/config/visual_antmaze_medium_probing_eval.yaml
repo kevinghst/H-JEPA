@@ -1,6 +1,8 @@
+# The released file is the concatenation of two separately collected sets (explore with seed 5072,
+# then stitch with seed 5073). This config collects both into one file: equivalent, not identical.
 cache_dir: null
 dataset_type: mixed
-output_dataset_name: visual_antmaze_medium_probing_train_2_5x
+output_dataset_name: visual_antmaze_medium_probing_eval
 world:
   num_envs: 10
   image_shape:
@@ -17,17 +19,17 @@ policy:
   sample_every: 10
   noise: null
   seed: 0
-seed: 4072
+seed: 5072
 mixtures:
 - dataset_type: explore
-  num_traj: 1555
-  seed: 4072
+  num_traj: 155
+  seed: 5072
   world:
     max_episode_steps: 401
   policy: {}
 - dataset_type: stitch
-  num_traj: 1551
-  seed: 4073
+  num_traj: 155
+  seed: 5073
   world:
     max_episode_steps: 401
   policy: {}
