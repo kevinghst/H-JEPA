@@ -1,4 +1,37 @@
-# H-JEPA: Hierarchical JEPA World Models
+<h1 align="center">
+    <p><b>H-JEPA: End-to-End Learning of Hierarchical World Models for Visual Planning</b></p>
+</h1>
+
+<div align="center" style="line-height: 1;">
+  <a href="https://github.com/kevinghst/H-JEPA" target="_blank" style="margin: 2px;"><img alt="Github" src="https://img.shields.io/badge/Github-kevinghst/H--JEPA-black?logo=github" style="display: inline-block; vertical-align: middle;"/></a>
+  <a href="https://huggingface.co/datasets/jepa-world-models/h-jepa" target="_blank" style="margin: 2px;"><img alt="HuggingFace Dataset" src="https://img.shields.io/badge/🤗%20Dataset-jepa--world--models/h--jepa-ffc107" style="display: inline-block; vertical-align: middle;"/></a>
+  <a href="https://huggingface.co/jepa-world-models/h-jepa" target="_blank" style="margin: 2px;"><img alt="HuggingFace Models" src="https://img.shields.io/badge/🤗%20Models-jepa--world--models/h--jepa-ffc107" style="display: inline-block; vertical-align: middle;"/></a>
+  <!-- TODO: replace XXXX.XXXXX with the arXiv id (link and badge) -->
+  <a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank" style="margin: 2px;"><img alt="ArXiv" src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b5212f?logo=arxiv" style="display: inline-block; vertical-align: middle;"/></a>
+</div>
+
+<br>
+
+<p align="center">
+  Wancong Zhang*,
+  Basile Terver*,
+  Mike Rabbat,
+  Yann LeCun&dagger;,
+  Randall Balestriero&dagger;
+</p>
+
+<p align="center">
+  <b>AMI Labs</b>, NYU, INRIA Paris, Brown University<br>
+  <sub>* equal contribution, &dagger; equal advising</sub>
+</p>
+
+<p align="center">
+  <img src="assets/teaser.png" alt="H-JEPA hierarchical planning in Visual AntMaze and planning success versus planner compute" width="800">
+</p>
+
+<p align="center"><sub><b>Left:</b> hierarchical planning in Visual AntMaze; each level's first predicted state becomes the subgoal of the level below. <b>Right:</b> AntMaze planning success versus planner compute, flat LeWM against two- and three-level H-JEPA.</sub></p>
+
+---
 
 Code to reproduce the planning results of the H-JEPA paper:
 
