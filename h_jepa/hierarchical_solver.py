@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .solver import (
+from stable_worldmodel.solver.solver import (
     num_planning_calls,
     planning_call_index,
     decreasing_horizon_schedule,

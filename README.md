@@ -55,6 +55,7 @@ scripts/data/               dataset collection (AntMaze, FourRoom) and Push-T ut
 h_jepa/
   main_hjepa.py             training (ends with a planning eval and a probing/decoding eval)
   eval.py                   standalone planning eval
+  hierarchical_solver.py    hierarchical planner (one gradient solver per level, planned top-down)
   main_probing_decoding_eval.py   standalone probing/decoding eval
   models/                   JEPA levels, H-JEPA container, encoders, predictors
   config/train/             28 training configs: <env>_<model>.yaml (+ base/<env>.yaml),

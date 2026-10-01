@@ -46,6 +46,8 @@ for env in DIRS:
     for planner in ("flat", "l2", "l3", "l4", "l2_project", "l3_project", "l4_project"):
         A = flat(yaml.safe_load(open(EVAL_DIR / f"{env}_{planner}.yaml")))
         B = rename_datasets(flat(yaml.safe_load(open(source(env, planner)))))
+        if B.get("solver._target_") == "stable_worldmodel.solver.HierarchicalSolver":  # moved to h_jepa/
+            B["solver._target_"] = "hierarchical_solver.HierarchicalSolver"
         diffs = [(k, A.get(k, "<none>"), B.get(k, "<none>")) for k in sorted(set(A) | set(B))
                  if not k.startswith(IGNORED) and not any(re.fullmatch(p, k) for p in REMOVED)
                  and str(A.get(k, "<none>")) != str(B.get(k, "<none>"))]

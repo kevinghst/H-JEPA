@@ -57,7 +57,7 @@ policy: null
 dump_eval_trajs_path: null
 load_eval_trajs_path: assets/eval_trajs/fourroom/fourroom_tp35_cross2_goal75_n50_d1.pt
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver

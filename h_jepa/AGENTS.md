@@ -41,6 +41,7 @@ scripts/data/        dataset collection (AntMaze, FourRoom) + Push-T utilities, 
 h_jepa/              main code; run everything from here
   main_hjepa.py      training (ends with planning eval + final probing/decoding eval)
   eval.py            standalone planning eval
+  hierarchical_solver.py  hierarchical planner (planning_eval.py builds it)
   main_probing_decoding_eval.py
   config/train/      <env>_{lewm,hjepa_l2..4,hwm_l2..4}.yaml on base/<env>.yaml
   config/eval/       <env>_{flat,l2,l3,l4,l2_project,l3_project,l4_project}.yaml (standalone YAMLs, no defaults list)
