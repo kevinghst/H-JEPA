@@ -3,7 +3,6 @@ import shlex
 import subprocess
 import sys
 import time
-from contextlib import nullcontext
 from pathlib import Path
 
 import hydra
@@ -11,7 +10,7 @@ import numpy as np
 import stable_worldmodel as swm
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
-from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from sklearn import preprocessing
 from torchvision.transforms import v2 as transforms
 
@@ -61,16 +60,7 @@ def load_eval_config(config_name: str | None = None, config_path: str | None = N
 
 def _resolve_existing_path(path: str | Path) -> Path:
     raw_path = Path(path).expanduser()
-    if raw_path.is_absolute() and raw_path.exists():
-        return raw_path
-
-    candidates = [
-        Path.cwd() / raw_path,
-        Path(__file__).parent / raw_path,
-        Path(__file__).parent.parent / raw_path,
-        Path(os.getenv("STABLEWM_HOME", "~/.stable_worldmodel")).expanduser() / raw_path,
-    ]
-    for candidate in candidates:
+    for candidate in (Path.cwd() / raw_path, Path(__file__).parent / raw_path):
         if candidate.exists():
             return candidate
     return raw_path
@@ -114,36 +104,14 @@ def resolve_results_dir(
         return Path(results_dir)
 
     output_dir = cfg.output.get("dir", None)
-    if cfg.policy not in (None, "random"):
-        base_dir = Path(swm.data.utils.get_cache_dir(), cfg.policy).parent
-        if output_dir is None:
-            return base_dir
-        output_path = Path(output_dir)
-        return output_path if output_path.is_absolute() else base_dir / output_path
-
-    if output_dir is not None:
-        return Path(output_dir)
-
-    return Path(__file__).parent
+    if cfg.policy in (None, "random"):
+        return Path(__file__).parent if output_dir is None else Path(output_dir)
+    return Path(swm.data.utils.get_cache_dir(), cfg.policy).parent / (output_dir or "")
 
 
 def _required_process_columns(cfg: DictConfig) -> list[str]:
-    columns = []
-    for col in cfg.dataset.keys_to_cache:
-        if col == "pixels":
-            continue
-        if col not in columns:
-            columns.append(col)
-
-    keys_to_merge = cfg.dataset.get("keys_to_merge", None)
-    if keys_to_merge is not None:
-        for col in keys_to_merge.keys():
-            if col == "pixels":
-                continue
-            if col not in columns:
-                columns.append(col)
-
-    return columns
+    columns = [*cfg.dataset.keys_to_cache, *(cfg.dataset.get("keys_to_merge", None) or {})]
+    return [col for col in dict.fromkeys(columns) if col != "pixels"]
 
 
 def _normalizer_artifact_to_process(artifact: dict, required_cols: list[str]) -> dict:
@@ -177,7 +145,7 @@ def _normalizer_artifact_to_process(artifact: dict, required_cols: list[str]) ->
 
 
 def _load_policy_normalizer_artifact(cfg: DictConfig) -> dict:
-    ckpt_path = resolve_model_checkpoint_path(cfg.policy, cfg.cache_dir)
+    ckpt_path = resolve_model_checkpoint_path(cfg.policy, cfg.get("cache_dir"))
     normalizer_path = ckpt_path.parent / NORMALIZER_ARTIFACT_FILENAME
     if not normalizer_path.exists():
         raise FileNotFoundError(
@@ -200,27 +168,41 @@ def _build_eval_process_from_policy_normalizer(
     return _normalizer_artifact_to_process(artifact, _required_process_columns(cfg))
 
 
-def _find_model_with_attribute(model, attribute_name: str):
-    """Mirror AutoCostModel behavior for in-memory models."""
-    if hasattr(model, attribute_name):
-        if isinstance(model, torch.nn.Module):
-            model = model.eval()
-        return model
-
-    for child in model.children():
-        result = _find_model_with_attribute(child, attribute_name)
-        if result is not None:
-            return result
-
-    return None
-
-
 def _drop_levels_above_model(cfg, num_levels):
     """Let one planning config (e.g. the lN_project configs) serve models of any depth."""
     for key in list(cfg.solver.solvers):
         if int(key[len("level"):]) > num_levels:
             del cfg.solver.solvers[key]
             del cfg.hierarchical_plan_config[key]
+
+
+def load_model(cfg: DictConfig, model=None):
+    """Load cfg.policy (or pick the cost module of an in-memory flat model) for planning on cuda."""
+    if model is None:
+        if _is_hierarchical_solver(cfg):
+            ckpt_path = resolve_model_checkpoint_path(cfg.policy, cfg.get("cache_dir"))
+            model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        else:
+            model = swm.policy.AutoCostModel(cfg.policy)
+
+        model = model.to("cuda")
+    elif not _is_hierarchical_solver(cfg):
+        selected_model = next((m for m in model.modules() if hasattr(m, "get_cost")), None)
+        if selected_model is None:
+            raise RuntimeError(
+                "No module with 'get_cost' found in the provided in-memory model."
+            )
+        model = selected_model
+
+    model = model.eval()
+    model.interpolate_pos_encoding = True
+    return model
+
+
+def build_solver(cfg: DictConfig, model):
+    if _is_hierarchical_solver(cfg):
+        return build_hierarchical_solver(cfg, model)
+    return hydra.utils.instantiate(cfg.solver, model=model)
 
 
 def _build_policy(
@@ -232,33 +214,11 @@ def _build_policy(
     if model is None and cfg.get("policy", "random") == "random":
         return swm.policy.RandomPolicy()
 
-    if model is None:
-        if _is_hierarchical_solver(cfg):
-            ckpt_path = resolve_model_checkpoint_path(cfg.policy, cfg.cache_dir)
-            model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-        else:
-            model = swm.policy.AutoCostModel(cfg.policy)
-
-        model = model.to("cuda")
-    elif not _is_hierarchical_solver(cfg):
-        selected_model = _find_model_with_attribute(model, "get_cost")
-        if selected_model is None:
-            raise RuntimeError(
-                "No module with 'get_cost' found in the provided in-memory model."
-            )
-        model = selected_model
-
-    model = model.eval()
-    model.interpolate_pos_encoding = True
-
+    model = load_model(cfg, model)
     if _is_hierarchical_solver(cfg):
         _drop_levels_above_model(cfg, model.num_levels)
     policy_config = _build_policy_plan_config(cfg)
-
-    if _is_hierarchical_solver(cfg):
-        solver = build_hierarchical_solver(cfg, model)
-    else:
-        solver = hydra.utils.instantiate(cfg.solver, model=model)
+    solver = build_solver(cfg, model)
 
     return swm.policy.WorldModelPolicy(
         solver=solver,
@@ -267,36 +227,6 @@ def _build_policy(
         transform=transform,
         eval_budget=int(cfg.eval.eval_budget),
     )
-
-
-def _solver_requires_grad(cfg: DictConfig) -> bool:
-    """Return True when the configured planner needs autograd during eval."""
-    solver_cfg = cfg.get("solver")
-    if solver_cfg is None:
-        return False
-
-    def _has_grad_solver(node) -> bool:
-        if node is None:
-            return False
-
-        if isinstance(node, DictConfig):
-            target = str(node.get("_target_", ""))
-            if target.endswith("GradientSolver"):
-                return True
-
-            for key in node.keys():
-                if OmegaConf.is_missing(node, key):
-                    continue
-                if _has_grad_solver(node[key]):
-                    return True
-            return False
-
-        if isinstance(node, (list, tuple, ListConfig)):
-            return any(_has_grad_solver(value) for value in node)
-
-        return False
-
-    return _has_grad_solver(solver_cfg)
 
 
 def _sample_stratified_eval_starts(cfg: DictConfig, dataset):
@@ -372,28 +302,12 @@ def _serialize_metrics(metrics: dict):
     return metrics_to_save
 
 
-def _collect_solve_records(solver) -> list:
-    """Gather per-solve GD compute records from a (possibly hierarchical) solver.
-
-    Each GradientSolver appends a record per solve() call; a HierarchicalSolver
-    holds one GradientSolver per level, each recording tagged with its level.
-    """
-    if solver is None:
-        return []
-    if hasattr(solver, "level_solvers"):
-        records = []
-        for level in sorted(solver.level_solvers):
-            records.extend(getattr(solver.level_solvers[level], "solve_records", []))
-        return records
-    return list(getattr(solver, "solve_records", []))
-
-
-def _leaf_solvers(solver) -> list:
-    if solver is None:
-        return []
-    if hasattr(solver, "level_solvers"):
-        return [solver.level_solvers[level] for level in sorted(solver.level_solvers)]
-    return [solver]
+def pop_solve_records(solver) -> list:
+    solvers = getattr(solver, "level_solvers", {} if solver is None else {1: solver})
+    records = [r for level in sorted(solvers) for r in solvers[level].solve_records]
+    for s in solvers.values():
+        s.solve_records = []
+    return records
 
 
 def _run_chunked_eval(
@@ -425,7 +339,6 @@ def _run_chunked_eval(
     ep_idx = payload.get("episodes_idx")
     ep_idx = list(ep_idx) if ep_idx is not None and len(ep_idx) else list(range(len(payload["data"])))
     callables = OmegaConf.to_container(cfg.eval.get("callables"), resolve=True)
-    solver_requires_grad = _solver_requires_grad(cfg)
     chunk_dir = results_dir / "chunks"
     chunk_dir.mkdir(parents=True, exist_ok=True)
     chunk_paths = {
@@ -439,9 +352,10 @@ def _run_chunked_eval(
         end = min(start + chunk_size, n)
         if policy is None:
             policy = _build_policy(cfg, process, transform, model=model)
+            solver = getattr(policy, "solver", None)
             gens = [
                 (s.torch_gen, s.torch_gen.initial_seed())
-                for s in _leaf_solvers(getattr(policy, "solver", None))
+                for s in getattr(solver, "level_solvers", {1: solver}).values()
                 if hasattr(s, "torch_gen")
             ]
         for gen, seed in gens:
@@ -452,10 +366,7 @@ def _run_chunked_eval(
         try:
             world.set_policy(policy)
             t0 = time.time()
-            sdp_context = nullcontext()
-            if solver_requires_grad and torch.cuda.is_available():
-                sdp_context = sdpa_kernel(SDPBackend.MATH)
-            with (torch.enable_grad if solver_requires_grad else torch.no_grad)(), sdp_context:
+            with torch.enable_grad(), sdpa_kernel(SDPBackend.MATH):
                 metrics = world.evaluate_from_dataset(
                     None,
                     episodes_idx=None,
@@ -471,10 +382,7 @@ def _run_chunked_eval(
             metrics["evaluation_time"] = time.time() - t0
         finally:
             world.close()
-        metrics["solve_records"] = _collect_solve_records(getattr(policy, "solver", None))
-        for s in _leaf_solvers(getattr(policy, "solver", None)):
-            if hasattr(s, "solve_records"):
-                s.solve_records = []
+        metrics["solve_records"] = pop_solve_records(getattr(policy, "solver", None))
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(_serialize_metrics(metrics)))
         os.replace(tmp, path)  # atomic: a preemption never leaves a partial chunk file
@@ -531,11 +439,7 @@ def run_planning_eval(
     dump_eval_trajs_path = cfg.get("dump_eval_trajs_path", None)
     dump_eval_only = dump_eval_trajs_path is not None
 
-    img_size = cfg.eval.img_size
-    if isinstance(img_size, (list, tuple, ListConfig)):
-        image_shape = tuple(int(size) for size in img_size)
-    else:
-        image_shape = (int(img_size), int(img_size))
+    image_shape = (int(cfg.eval.img_size),) * 2
 
     dataset = None
     eval_episodes = None
@@ -564,13 +468,7 @@ def run_planning_eval(
         world.set_policy(policy)
 
         start_time = time.time()
-        solver_requires_grad = _solver_requires_grad(cfg)
-        grad_context = torch.enable_grad if solver_requires_grad else torch.no_grad
-        sdp_context = nullcontext()
-        if solver_requires_grad and torch.cuda.is_available():
-            sdp_context = sdpa_kernel(SDPBackend.MATH)
-
-        with grad_context(), sdp_context:
+        with torch.enable_grad(), sdpa_kernel(SDPBackend.MATH):
             callables = OmegaConf.to_container(
                 cfg.eval.get("callables"), resolve=True
             )
@@ -624,7 +522,7 @@ def run_planning_eval(
 
     # Per-solve GD compute metadata (level, horizon, num_samples, per-env n_iters,
     # wall_clock) for the planner-FLOPs Pareto analysis.
-    solve_records = _collect_solve_records(getattr(policy, "solver", None))
+    solve_records = pop_solve_records(getattr(policy, "solver", None))
     if solve_records:
         import json
         (resolved_results_dir / "planning_compute.json").write_text(

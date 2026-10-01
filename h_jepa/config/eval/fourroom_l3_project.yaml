@@ -3,11 +3,6 @@
 # horizon_one_goal_cost_space=upper on levels 2..3 chains the projection up to level 3.
 # Levels above the model's depth are dropped, so this config serves 2/3/4-level models.
 cache_dir: ${oc.env:STABLEWM_HOME}
-wandb:
-  enabled: false
-  entity: null
-  project: hjepa-eval
-  run_name: null
 world:
   env_name: swm/FourRoomDistractors-v0
   num_envs: ${eval.num_eval}

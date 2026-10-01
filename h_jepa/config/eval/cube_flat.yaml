@@ -1,11 +1,6 @@
 # OGBench Cube: flat level-1 planning (LeWM).
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
 cache_dir: ${oc.env:STABLEWM_HOME}
-wandb:
-  enabled: false
-  entity: null
-  project: hjepa-eval
-  run_name: null
 world:
   env_name: swm/OGBCube-v0
   num_envs: ${eval.num_eval}
