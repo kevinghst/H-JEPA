@@ -62,7 +62,7 @@ the live repo.
 ## Reporting
 
 Parse `Submitted batch job <id>` and report, for each command in the order given: the job id, the
-log path `h_jepa/logs/<id>.out`, and the output dir (training: `$STABLEWM_HOME/ckpts/<subdir>`;
+log path `h_jepa/logs/<id>.out`, and the output dir (training: `$HJEPA_HOME/ckpts/<subdir>`;
 eval: `output.dir`, relative paths resolve next to the checkpoint).
 
 Before submitting, check whether the same command was already submitted (`squeue -u $USER -o

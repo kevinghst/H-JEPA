@@ -40,7 +40,7 @@ from torchvision.transforms import v2 as transforms
 
 from data import IMAGENET_STATS, NORMALIZER_ARTIFACT_FILENAME, load_normalizer_artifact
 from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
-from stable_worldmodel.solver.hierarchical_solver import build_hierarchical_solver
+from hierarchical_solver import build_hierarchical_solver
 from traj_metrics import cumulative_delta, frechet_skill_over_floor
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config" / "eval"

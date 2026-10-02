@@ -54,7 +54,7 @@ def _cache_dir(cfg) -> str | None:
     cache_dir = cfg.get("cache_dir", None)
     if cache_dir not in (None, "", "null"):
         return str(cache_dir)
-    return os.environ.get("STABLEWM_HOME", None)
+    return os.environ.get("HJEPA_HOME", None)
 
 
 def _normalizer_path_for_policy(policy_path: str | Path) -> Path:

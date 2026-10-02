@@ -3,7 +3,7 @@
 #SBATCH --requeue
 #SBATCH --open-mode=append
 # Job body for h_jepa/launch.py, which passes partition/account/qos/time/gpus/cpus/mem/output on the
-# sbatch command line and exports HJ_CODE (code snapshot root), HJ_VENV, HJ_GPUS, STABLEWM_HOME.
+# sbatch command line and exports HJ_CODE (code snapshot root), HJ_VENV, HJ_GPUS, HJEPA_HOME.
 #   launch.sbatch train <main_hjepa.py args...>        (also used by `launch.py resume`)
 #   launch.sbatch eval "<config>|<seed>|<ckpt>|<outdir>|<tasks or empty>"... -- [eval.py overrides...]
 # A requeue re-runs this script: training resumes from <run_dir>/lightning_resume/last.ckpt and

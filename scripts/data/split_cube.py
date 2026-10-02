@@ -1,6 +1,6 @@
 """Split LeWM's cube_single_expert.h5 into the train (first 9,800 episodes) and val (last 200) files.
 
-usage: python scripts/data/split_cube.py   (reads and writes $STABLEWM_HOME)
+usage: python scripts/data/split_cube.py   (reads and writes $HJEPA_HOME)
 Each file renumbers `ep_idx` and the per-row `id` from its own first row.
 """
 import os
@@ -10,7 +10,7 @@ import h5py
 import hdf5plugin
 import numpy as np
 
-HOME = Path(os.environ["STABLEWM_HOME"])
+HOME = Path(os.environ["HJEPA_HOME"])
 SRC = HOME / "cube_single_expert.h5"
 SPLITS = {"cube_single_expert_train": (0, 9800), "cube_single_expert_val": (9800, 10000)}
 STEP = 3300

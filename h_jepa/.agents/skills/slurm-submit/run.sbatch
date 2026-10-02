@@ -25,7 +25,7 @@ if [ "$#" -gt 0 ] && [ -d "$1" ]; then
 fi
 echo "Using code root: $code_root"
 export PYTHONPATH="$code_root:$code_root/h_jepa${PYTHONPATH:+:$PYTHONPATH}"
-export STABLEWM_HOME="${STABLEWM_HOME:-/mnt/vast/home/kevin/stable-wm-lejepa/datasets}"
+export HJEPA_HOME="${HJEPA_HOME:-/mnt/vast/home/kevin/stable-wm-lejepa/datasets}"
 cd "$code_root/h_jepa"
 export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl

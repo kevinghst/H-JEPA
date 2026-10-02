@@ -8,7 +8,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 
 [] load model ckpts
 [] upload datasets
-[] uploade eval tasks
+[x] upload eval tasks (HF `jepa-world-models/h-jepa`, `eval_trajs/`)
 [] verify code for generating datasets
 [] verify code for generating eval tasks
 [] check to see if unifying with basile's action clipping can work?
@@ -55,7 +55,13 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
     planner seeds 1/2/3 (`eval_droid.sh`). The planner-seed spread is ±4 points at S=4. Keep this, or
     report the SE over all 9 train x planner seeds?
 14. `h_jepa/droid_assets/` (tracked, 10 KB: norm stats + clip manifest) vs the git-ignored
-    `h_jepa/assets/` symlink that holds the simulation eval tasks. Keep the separate tracked dir?
+    `h_jepa/assets/` dir that holds the simulation eval tasks. Keep the separate tracked dir?
+15. Prediction-loss precision (branch `bf16-pred-loss`): the paper code computed the teacher-forcing /
+    rollout MSE by hand in bf16 (`_ensemble_mse`); the prune commit replaced it with `F.mse_loss`
+    (fp32 under autocast), and the experiments_3 retrains of Ant H-JEPA 3/4, Cube H-JEPA 4,
+    FourRoom HWM 4 came out below the paper. `_pred_mse` restores the paper arithmetic (loss terms
+    bit-identical to `lejepa_code`). It also changes DROID training (DROID levels use this branch).
+    Pending: retrains to see whether it closes the gap, and whether DROID should keep `F.mse_loss`.
 
 ## Pending work
 
@@ -63,7 +69,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   re-stored with lossless Blosc-Zstd, 90 -> 32 GB; `observation`, an exact copy of `pixels`, dropped from the
   non-training AntMaze files; every column verified against the originals), `pusht_expert_val.h5` and
   `SHA256SUMS`; documented in the dataset card. The Zstd files are under `/mnt/vast/home/kevin/hjepa_release_data`,
-  which also works as a `STABLEWM_HOME` with the release names.
+  which also works as a `HJEPA_HOME` with the release names.
 - Push-T / Cube training data: LeWM's HF releases. Checked 2026-10-01: LeWM's `cube_single_expert.h5` is
   byte-identical to ours and `scripts/data/split_cube.py` reproduces our train/val files; LeWM's Push-T train file
   plus `add_pusht_block_ori.py` equals our `pusht_expert_train.h5` in every column.
@@ -96,7 +102,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `droid/` = relative-path CSVs, 61 tar shards of the loader-read 256p files (`droid_256p/shard-*.tar`, 90.9 GB),
   `droid_raw_eval16.tar` (16 raw eval episodes), `SHA256SUMS`, `extract.sh`; dataset card = repo README.md (CC BY 4.0,
   DROID citation); packing/upload scripts in `~/shared/cc_scratch/hjepa_droid_release/`. `DROIDClipReader` resolves relative CSV names, CSV
-  entries and manifest `episode_path`s against `$STABLEWM_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
+  entries and manifest `episode_path`s against `$HJEPA_HOME/droid`; the manifest is now relative (`droid_raw/1.0.1/...`).
   Data gate 42/42; e2e plan-eval bit-identical to a control run with the absolute paths. Pending: `base/droid.yaml` `name`/`val_name` -> the bare CSV
   names, and `launch.py check_datasets` must then look up `.csv` under `home / "droid"` (it resolves them against cwd).
   Done 2026-09-30 (next bullet).
@@ -104,7 +110,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   `subdir: ${env}/${output_model_name}/seed${seed}`; `launch.py train` sweeps at `ckpts/<env>/<sweep>_<ts>/`), and
   stable-pretraining's cache (runs/, environment*.json, heartbeat, checkpoints) in `<run_dir>/spt/` via
   `spt.set(cache_dir=...)` in `main_hjepa.py`. `base/droid.yaml` reads the relative CSV names; `check_datasets` looks
-  them up under `$STABLEWM_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$STABLEWM_HOME`).
+  them up under `$HJEPA_HOME/droid` (and `/`-containing h5 names such as FourRoom's under `$HJEPA_HOME`).
   Old-layout runs (`ckpts/<env>_<model>/`) move with `mv` + a `subdir: <env>/...` rewrite in their `config.yaml`
   (Basile's DROID runs moved 2026-09-30; Kevin's to do, not part of the release).
 - 2026-09-30 fix D1 (level-2 action SIGReg): with T level-2 states the loader builds T action chunks, the last one
@@ -113,7 +119,7 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   loss term and module gradient matches the original code within 1.2e-6 relative (eb H-JEPA seed-1 e-100 weights);
   flat forward and Cube (no action SIGReg) unchanged bitwise; `droid_hjepa_l2` / `droid_hwm_l2` change only
   `sigreg_loss_action_level2`. DROID HWM / H-JEPA l2 fleets retrained with it (`droid_{hwm,hjepa}_l2_n1fix`).
-- Delete the test outputs under `$STABLEWM_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
+- Delete the test outputs under `$HJEPA_HOME/ckpts/`: `smoke_release`, `smoke_release2`,
   `smoke_port`, `regress` (created 2026-09-27; outside the repo, delete only when
   the user says so).
 
@@ -298,6 +304,15 @@ Round 6 (2026-09-30, Kevin's PR review)
   `models.predictors.causal.*` or `ActionMLPEncoder` no longer unpickle (state_dict keys unchanged: re-save them
   through a module/class-renaming unpickler, or rebuild from the config and load the state_dict).
 - mentions of the original training code by name in code, configs and docs (`provenance.md` keeps the source-run paths).
+
+Round 7 (2026-10-01)
+- in-training online probes (`spt.callbacks.OnlineProbe` on `embed_{level}` / `pred_embed_{level}`, W&B-only
+  diagnostics; inputs detached, own optimizer), with `add_probe_targets` / `probe_targets` / `probe_target_key`,
+  the `pred_embed_{level}` outputs of `hjepa_forward`, `create_world_model`'s `embed_dims` return value and the
+  unread DROID `levelN.probes.inputs` keys. Reported probe numbers come from `final_probing_decoding_eval` (fresh
+  heads on the frozen model), unaffected. fwd_test bit-identical, verify_train output unchanged, Cube smoke run ok.
+  Old `lightning_resume/last.ckpt` files still hold the probe modules (`callbacks_modules`); weights / object
+  checkpoints are unaffected.
 
 DROID (not ported from the original code)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;

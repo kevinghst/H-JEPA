@@ -7,7 +7,7 @@ clips: droid_assets/droid_clips_waypoint_curated16v2_5fps_gw36.json
 img_size: 256
 eval_budget: 36
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver

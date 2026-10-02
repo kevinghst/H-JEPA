@@ -8,7 +8,7 @@
   common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G (partition and account go together)
 
 train   One job per (grid cell x seed): the cartesian product of every --grid key=v1,v2 and --seeds.
-        Sweep dir $STABLEWM_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/ (<env> = the config's env key),
+        Sweep dir $HJEPA_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/ (<env> = the config's env key),
         run dirs <sweep_dir>/<cell>/seed<S>,
         output_model_name = <cell>, a readable token per grid key: level2.wm.history_size=7 -> l2hs7
         (level number + initials of the last key part; full key when two tokens would collide).
@@ -26,7 +26,7 @@ eval    Planning eval of every <run>/<name>_epoch_<N>_object.ckpt under the targ
         <run>/eval_epoch/epoch_<N>/metrics.yaml. Done evals and live jobs are skipped, so re-running
         picks up new epochs; --chunk K epochs per job; --time default = base + per-epoch minutes x K.
 
-Before any sbatch: STABLEWM_HOME set; the Hydra config composes with the exact overrides (unknown keys
+Before any sbatch: HJEPA_HOME set; the Hydra config composes with the exact overrides (unknown keys
 fail); dataset files named in cfg.data exist; fresh train run dirs are absent; cluster settings are
 complete. Cluster settings: config/slurm/default.yaml, overridden by config/slurm/local.yaml (gitignored:
 venv, partition, account, ...), overridden by CLI flags. Job logs: <run_dir>/slurm/%x_%j.out.
@@ -61,10 +61,10 @@ def die(msg: str) -> None:
     sys.exit(f"launch.py: ERROR: {msg}")
 
 
-def stablewm_home() -> Path:
-    h = os.environ.get("STABLEWM_HOME")
+def hjepa_home() -> Path:
+    h = os.environ.get("HJEPA_HOME")
     if not h or not Path(h).is_dir():
-        die(f"STABLEWM_HOME must be set to an existing dir (got {h!r})")
+        die(f"HJEPA_HOME must be set to an existing dir (got {h!r})")
     return Path(h).resolve()
 
 
@@ -168,7 +168,7 @@ def submit(c, home: Path, name: str, log_dir: Path, gpus: int, code: Path, args:
            f"--account={c.account}", f"--qos={c.qos}", f"--time={c.time}", f"--ntasks-per-node={gpus}",
            f"--gpus-per-node={gpus}", f"--cpus-per-task={c.cpus_per_task}", f"--mem={c.mem}",
            f"--output={log_dir}/%x_%j.out",
-           f"--export=ALL,HJ_CODE={code},HJ_VENV={c.venv},HJ_GPUS={gpus},STABLEWM_HOME={home}",
+           f"--export=ALL,HJ_CODE={code},HJ_VENV={c.venv},HJ_GPUS={gpus},HJEPA_HOME={home}",
            str(code / "h_jepa/scripts/launch.sbatch" if not dry else SBATCH), *args]  # fmt: skip
     if dry:
         print("DRY", shlex.join(cmd))
@@ -201,7 +201,7 @@ def safe(v: str) -> str:
 
 
 def cmd_train(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("train", a)
+    home, c = hjepa_home(), cluster("train", a)
     if a.sweep.lower() in RESERVED or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", a.sweep):
         die(f"--sweep {a.sweep!r}: give a descriptive, filesystem-safe name (not {sorted(RESERVED - {''})})")
     for o in overrides:
@@ -259,7 +259,7 @@ def cmd_train(a, overrides: list) -> None:
 
 
 def cmd_resume(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("resume", a)
+    home, c = hjepa_home(), cluster("resume", a)
     rd = Path(a.run_dir).resolve()
     below = [d for d in [*rd.glob("*"), *rd.glob("*/*")] if d.is_dir() and is_run(d)]
     if below:
@@ -271,7 +271,7 @@ def cmd_resume(a, overrides: list) -> None:
         die(f"nothing to resume in {rd}: no lightning_resume/last.ckpt{extra}; start a new run with train")
     saved = OmegaConf.load(rd / "config.yaml")
     if (home / "ckpts" / str(OmegaConf.select(saved, "subdir"))).resolve() != rd:
-        die(f"saved subdir={OmegaConf.select(saved, 'subdir')} is not {rd} under STABLEWM_HOME={home}")
+        die(f"saved subdir={OmegaConf.select(saved, 'subdir')} is not {rd} under HJEPA_HOME={home}")
     for f in (rd / "launch.json", rd.parent.parent / "launch.json"):
         log = json.loads(f.read_text()) if f.exists() else []
         if not (jid := next((e["jobs"][str(rd)] for e in reversed(log) if str(rd) in e.get("jobs", {})), None)):
@@ -304,7 +304,7 @@ def env_of(cfg: OmegaConf) -> str:
 
 
 def cmd_eval(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("eval", a)
+    home, c = hjepa_home(), cluster("eval", a)
     root = Path(a.target).resolve()
     if a.tasks and not (Path(a.tasks).is_absolute() and Path(a.tasks).is_file()):
         die(f"--tasks {a.tasks}: expected an existing absolute .pt path")

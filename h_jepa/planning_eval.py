@@ -21,7 +21,7 @@ from data import (
     load_normalizer_artifact,
 )
 from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
-from stable_worldmodel.solver.hierarchical_solver import build_hierarchical_solver
+from hierarchical_solver import build_hierarchical_solver
 from utils import resolve_model_checkpoint_path
 
 
@@ -68,7 +68,7 @@ def _resolve_existing_path(path: str | Path) -> Path:
         Path.cwd() / raw_path,
         Path(__file__).parent / raw_path,
         Path(__file__).parent.parent / raw_path,
-        Path(os.getenv("STABLEWM_HOME", "~/.stable_worldmodel")).expanduser() / raw_path,
+        Path(os.getenv("HJEPA_HOME", "~/.stable_worldmodel")).expanduser() / raw_path,
     ]
     for candidate in candidates:
         if candidate.exists():

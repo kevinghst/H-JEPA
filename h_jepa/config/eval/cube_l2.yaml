@@ -1,6 +1,6 @@
 # OGBench Cube: 2-level hierarchical planning, shared by H-JEPA and HWM.
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 wandb:
   enabled: false
   entity: null
@@ -31,7 +31,7 @@ policy: null
 dump_eval_trajs_path: null
 load_eval_trajs_path: assets/eval_trajs/ogbench/goal_offset_20_pickup_val.pt
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver

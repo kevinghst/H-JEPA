@@ -1,6 +1,6 @@
 # Provenance: which paper runs back the release
 
-Paths are relative to `$STABLEWM_HOME/ckpts` (`/mnt/vast/home/kevin/stable-wm-lejepa/datasets/ckpts`).
+Paths are relative to `$HJEPA_HOME/ckpts` (`/mnt/vast/home/kevin/stable-wm-lejepa/datasets/ckpts`).
 Run ids like `9-6-1/1` are `<sweep id>/<grid cell>`; seeds 42/43/44 live in `seed<N>/`.
 `.agents/skills/release-check/scripts/runs.py` holds the same ledger in code, and `verify_train.py` /
 `verify_eval.py` check the configs against it.
@@ -79,10 +79,10 @@ The README tables come from the paper-figure data in the development repo
   without the FourRoom `fourroom_7_21/tp35/` dirs; the paper files keep the old names under
   `/mnt/vast/home/kevin/stable-wm-lejepa/datasets` (the release-check scripts map old to new).
   Beware: that dir also holds an unrelated older `visual_antmaze_medium_stitch_val.h5` (1x), so the
-  release configs must not be run against it with `STABLEWM_HOME` pointing there.
+  release configs must not be run against it with `HJEPA_HOME` pointing there.
 - AntMaze / FourRoom collection configs in `scripts/data/config/` (one per release file, same name)
-  are the sidecar configs saved next to each paper dataset (`$STABLEWM_HOME/*.yaml`,
-  `$STABLEWM_HOME/fourroom_7_21/tp35/*.collection.yaml`) with portable paths, except
+  are the sidecar configs saved next to each paper dataset (`$HJEPA_HOME/*.yaml`,
+  `$HJEPA_HOME/fourroom_7_21/tp35/*.collection.yaml`) with portable paths, except
   `visual_antmaze_medium_explore_stitch_train` and `visual_antmaze_medium_probing_eval`, which each
   replace two paper sets. `scripts/data/collect_datasets.sh` runs all eight.
 - Ant training set: the paper runs mixed `visual_antmaze_medium_explore_train` (all 12,500 episodes)

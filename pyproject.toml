@@ -39,12 +39,15 @@ dependencies = [
 train = [
     "transformers>=4.50.0",
     "stable-pretraining==0.1.7",  # training only; main_hjepa.ResumableManager needs 0.1.7
+    "datasets>=4",  # stable-pretraining leaves it unpinned and pip otherwise backtracks to 1.x
     "lightning>=2.5",
     "torchmetrics",
     "hydra-core",
     "hydra-submitit-launcher",
     "wandb",
     "decord",
+    "scikit-learn",
+    "matplotlib",
 ]
 
 env = [
@@ -53,9 +56,11 @@ env = [
     "shapely",
     "ogbench",
     "minigrid",
-    "gymnasium[all]",
     "opencv-python",
     "stable_baselines3",
+    "imageio",
+    "jax",  # OGBench AntMaze expert policy (data collection, eval-task generation)
+    "flax",
 ]
 
 [dependency-groups]

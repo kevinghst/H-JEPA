@@ -13,7 +13,7 @@ MODELS=${MODELS:-"lewm hwm_l2 hjepa_l2"}
 SEEDS=${SEEDS:-"1 1000 10000"}
 PLAN_SEEDS=${PLAN_SEEDS:-"1 2 3"}
 EPOCHS=${EPOCHS:-""}
-RUNS=${RUNS:-$STABLEWM_HOME/ckpts/droid}
+RUNS=${RUNS:-$HJEPA_HOME/ckpts/droid}
 
 for model in $MODELS; do
   plan=flat

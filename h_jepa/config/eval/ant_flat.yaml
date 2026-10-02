@@ -1,6 +1,6 @@
 # Visual AntMaze: flat level-1 planning (LeWM).
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 wandb:
   enabled: false
   entity: null

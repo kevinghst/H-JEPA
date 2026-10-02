@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Collect the eight Visual AntMaze and FourRoom Distractors datasets into $STABLEWM_HOME, with the
+# Collect the eight Visual AntMaze and FourRoom Distractors datasets into $HJEPA_HOME, with the
 # names the configs read (the same files as the Hugging Face release, up to collection randomness).
-# AntMaze needs the OGBench ant expert in $STABLEWM_HOME/ogbench_experts/ant/.
+# AntMaze needs the OGBench ant expert in $HJEPA_HOME/ogbench_experts/ant/.
 # Re-running resumes an interrupted collection.
 set -e
 cd "$(dirname "$0")"
