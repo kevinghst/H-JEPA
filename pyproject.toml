@@ -45,6 +45,8 @@ train = [
     "hydra-submitit-launcher",
     "wandb",
     "decord",
+    "scikit-learn",
+    "matplotlib",
 ]
 
 env = [
@@ -53,9 +55,11 @@ env = [
     "shapely",
     "ogbench",
     "minigrid",
-    "gymnasium[all]",
     "opencv-python",
     "stable_baselines3",
+    "imageio",
+    "jax",  # OGBench AntMaze expert policy (data collection, eval-task generation)
+    "flax",
 ]
 
 [dependency-groups]

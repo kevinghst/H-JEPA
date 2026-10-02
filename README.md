@@ -134,7 +134,7 @@ set was converted from DINO-WM's Push-T validation data with `scripts/data/conve
 
 ```bash
 hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME \
-  --include "visual_antmaze_medium_*" "fourroom_tp35_d1*" SHA256SUMS
+  --include "visual_antmaze_medium_*" --include "fourroom_tp35_d1*" --include SHA256SUMS
 cd $HJEPA_HOME && sha256sum -c --ignore-missing SHA256SUMS
 ```
 
