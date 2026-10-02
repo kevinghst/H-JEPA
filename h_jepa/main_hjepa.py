@@ -20,7 +20,6 @@ from utils import (
     DebugArtifactCleanupCallback,
     PlanningEvalCallback,
     ResumeCheckpoint,
-    TrainBatchLimitCallback,
 )
 from final_probing_decoding_eval import FinalProbingDecodingEvalCallback
 from data import (
@@ -294,9 +293,6 @@ def run(cfg):
         run_on_train_end=bool(_pe.run_on_train_end),
         every_n_epochs=int(_pe.every_n_epochs),
     )
-    train_batch_limit_callback = TrainBatchLimitCallback(
-        cfg.get("max_train_batches_total", None)
-    )
     final_probing_decoding_eval_cfg = cfg.final_probing_decoding_eval
     final_probing_decoding_eval_callback = FinalProbingDecodingEvalCallback(
         eval_cfg=final_probing_decoding_eval_cfg,
@@ -316,7 +312,6 @@ def run(cfg):
         callbacks=[
         *resume_callbacks,
         debug_cleanup_callback,
-        train_batch_limit_callback,
         object_dump_callback,
         planning_eval_callback,
         final_probing_decoding_eval_callback,

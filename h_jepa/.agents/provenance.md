@@ -26,6 +26,11 @@ What the grid cells fixed (now the config defaults):
 - LeWM: Ant/Cube/Push-T are the level-1 stage of the stagewise runs (batch-capped:
   `max_train_batches_total` 498912 / 191722 / 206982, 50-epoch cap); FourRoom is cell 0 of the
   level-1 SIGReg sweep `7-23-2` (weight 0.72, 11 epochs).
+  Since 2026-10-02 the release drops the batch cap and sets LeWM `max_epochs` to Ant 7 (the cap
+  rounded up to whole epochs, ≈ 74.8k batches per epoch at batch 128) and Cube / FourRoom / Push-T 10
+  (≈ 73% / 91% / 75% of the paper runs' batches; ≈ 13.9k / 7.4k / 15.5k batches per epoch). This is
+  not the paper recipe: the batch counts differ, and the cosine LR schedule (sized from `max_epochs`)
+  now decays fully instead of stopping early in a 50-epoch cosine (FourRoom: 10 instead of 11 epochs).
 
 ## Planning configs (`config/eval/<env>_<planner>.yaml`)
 

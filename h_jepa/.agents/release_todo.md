@@ -315,6 +315,13 @@ Round 7 (2026-10-01)
   Old `lightning_resume/last.ckpt` files still hold the probe modules (`callbacks_modules`); weights / object
   checkpoints are unaffected.
 
+Round 8 (2026-10-02)
+- `max_train_batches_total` (`TrainBatchLimitCallback`). It was set only by Ant/Cube/Push-T LeWM (498912 /
+  191722 / 206982 batches, `max_epochs: 50`). LeWM `max_epochs` is now Ant 7 (the cap rounded up to whole
+  epochs) and Cube / FourRoom / Push-T 10 (FourRoom was 11). Not numerics-neutral: different batch counts, and
+  the cosine LR schedule (sized from `max_epochs`) now decays fully instead of stopping at ~12% / ~27% / ~26% of
+  a 50-epoch cosine. The four LeWM configs no longer reproduce the paper's LeWM runs exactly.
+
 DROID (not ported from the original code)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;
   `tab:sf-idm0`; varcomp; selective-bars; the TFLOPs measurement of `fig:compute-pareto-real`

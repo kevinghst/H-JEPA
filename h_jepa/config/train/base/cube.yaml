@@ -70,7 +70,6 @@ encoder_scale: tiny
 dump_object: true
 save_every_n_epochs: 1
 resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
-max_train_batches_total: null
 trainer:
   max_epochs: 8
   devices: auto

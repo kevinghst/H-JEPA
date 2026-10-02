@@ -205,42 +205,6 @@ class ResumeCheckpoint(Callback):
         self._save(trainer)
 
 
-class TrainBatchLimitCallback(Callback):
-    """Stop training after a fixed number of train dataloader batches."""
-
-    def __init__(self, max_train_batches_total):
-        super().__init__()
-        if max_train_batches_total is None:
-            self.max_train_batches_total = None
-        else:
-            self.max_train_batches_total = int(max_train_batches_total)
-            if self.max_train_batches_total <= 0:
-                raise ValueError("max_train_batches_total must be positive.")
-        self._train_batches_seen = 0
-
-    def on_train_start(self, trainer, pl_module):
-        # Count from the restored step so the budget spans the whole run across resumes.
-        self._train_batches_seen = _batches_done(trainer)
-        logging.info(f"TrainBatchLimitCallback: {self._train_batches_seen} train batches already done")
-        if self.max_train_batches_total is not None and self._train_batches_seen >= self.max_train_batches_total:
-            trainer.should_stop = True
-
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if self.max_train_batches_total is None:
-            return
-
-        self._train_batches_seen += 1
-        if self._train_batches_seen < self.max_train_batches_total:
-            return
-
-        trainer.should_stop = True
-        logging.info(
-            "Stopping training after "
-            f"{self._train_batches_seen} train batches "
-            f"(max_train_batches_total={self.max_train_batches_total})."
-        )
-
-
 class PlanningEvalCallback(Callback):
     """Run the planning eval at the end of training and, if `every_n_epochs` > 0, every
     `every_n_epochs` epochs; planner seed = model seed."""

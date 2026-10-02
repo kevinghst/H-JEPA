@@ -5,7 +5,7 @@ defaults:
 output_model_name: fourroom_lewm
 num_levels: 1
 trainer:
-  max_epochs: 11
+  max_epochs: 10
 level1:
   loss:
     embed:

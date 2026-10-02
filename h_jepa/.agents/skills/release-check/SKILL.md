@@ -26,9 +26,11 @@ python $S/verify_eval.py           # 28 planning configs vs the eval_config.yaml
 Expected: every H-JEPA/HWM config and every planning config prints `IDENTICAL`. The four LeWM
 configs have known behavior-neutral differences: `level1.lr` (equals `optimizer.lr`),
 `trainer.precision` (`bf16` is Lightning's alias of `bf16-mixed`), dataloader workers/prefetch,
-`save_every_n_epochs`, `level1.probes.enabled` (online probes are diagnostics), Ant's
-`val_total_transitions` (validation only), FourRoom's `max_train_batches_total: null`. Keys removed on purpose during the cleanup are
-listed in the scripts' `REMOVED` patterns; when you remove another config key, add it there.
+`level1.probes.enabled` (online probes are diagnostics), Ant's
+`val_total_transitions` (validation only). All four LeWM configs also differ in `trainer.max_epochs`
+(Ant 7, Cube / FourRoom / Push-T 10, vs the paper's batch-capped 50 and FourRoom's 11; not behavior-neutral, see `.agents/provenance.md`). Keys removed on purpose during the cleanup are
+listed in the scripts' `REMOVED` patterns (checkpoint cadence, `save_every_n_epochs` / `resume_every_n_steps`,
+is in `IGNORED`); when you remove another config key, add it there.
 
 ## 2. Training step is unchanged (a minute, GPU)
 
