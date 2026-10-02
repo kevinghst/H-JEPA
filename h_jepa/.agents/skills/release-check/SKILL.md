@@ -41,10 +41,9 @@ python $S/fwd_test.py --compare .agents/skills/release-check/reference/fwd_losse
 
 Builds five models (Ant H-JEPA 3, FourRoom H-JEPA 4, Push-T HWM 2, Cube LeWM, Cube H-JEPA 2) with a
 fixed seed and runs one `hjepa_forward` on a fixed random batch. Every loss term and parameter count
-must be identical to the reference. The reference was regenerated on 2026-10-01 after the
-prediction loss was moved back to the paper's bf16 arithmetic (`_pred_mse`); the development code
-(`lejepa_code`, paper configs) gives bit-identical loss terms. The earlier 2026-09-27 reference used
-`F.mse_loss` (fp32 under autocast), which the development comparison had not caught. If a change
+must be identical to the reference. The reference was produced by this release code on
+2026-09-27. The prediction loss uses `F.mse_loss`, which autocast runs in fp32. The paper code
+computed it by hand in bf16, so the loss terms are not bit-identical to `lejepa_code`. If a change
 is meant to alter training, say so and regenerate the reference only after the user agrees.
 
 Real training is not seeded before model construction (`spt.Manager` seeds afterwards), so two real
