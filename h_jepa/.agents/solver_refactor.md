@@ -1,6 +1,6 @@
 # Hierarchical solver refactor
 
-Cleanups for `stable_worldmodel/solver/hierarchical_solver.py` (review of 2026-09-28), ranked by
+Cleanups for `h_jepa/hierarchical_solver.py` (moved from `stable_worldmodel/solver/` on 2026-10-01) (review of 2026-09-28), ranked by
 leverage + confidence. Line numbers refer to the file after organization items 1, 3, 4 and 6.
 
 Verification: Cube planning evals (deterministic, executed actions must match exactly) plus a smoke

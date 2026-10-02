@@ -6,7 +6,7 @@
   python launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [eval.py overrides]
   common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G --dry
 
-train   One job per (grid cell x seed) in $STABLEWM_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/<cell>/seed<S>,
+train   One job per (grid cell x seed) in $HJEPA_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/<cell>/seed<S>,
         <cell> = output_model_name = one token per grid key (level2.wm.history_size=7 -> l2hs7). The tree
         (git ls-files -co --exclude-standard) is copied once to <sweep_dir>/code (+ GIT_COMMIT, GIT_STATUS,
         UNCOMMITTED.diff); every job of the sweep, its resumes and --into additions run from that copy.
@@ -45,10 +45,10 @@ def die(msg: str) -> None:
     sys.exit(f"launch.py: ERROR: {msg}")
 
 
-def stablewm_home() -> Path:
-    h = os.environ.get("STABLEWM_HOME")
+def hjepa_home() -> Path:
+    h = os.environ.get("HJEPA_HOME")
     if not h or not Path(h).is_dir():
-        die(f"STABLEWM_HOME must be set to an existing dir (got {h!r})")
+        die(f"HJEPA_HOME must be set to an existing dir (got {h!r})")
     return Path(h).resolve()
 
 
@@ -124,7 +124,7 @@ def submit(c, home: Path, name: str, log_dir: Path, gpus: int, code: Path, args:
            f"--account={c.account}", f"--qos={c.qos}", f"--time={c.time}", "--nodes=1", "--requeue",
            "--open-mode=append", f"--ntasks-per-node={gpus}", f"--gpus-per-node={gpus}", f"--mem={c.mem}",
            f"--cpus-per-task={c.cpus_per_task}", *(f"--{k}={log_dir}/%x_%j.out" for k in ("output", "error")),
-           f"--export=ALL,STABLEWM_HOME={home}", f"--wrap={job}"]  # fmt: skip
+           f"--export=ALL,HJEPA_HOME={home}", f"--wrap={job}"]  # fmt: skip
     if dry:
         print("DRY", shlex.join(cmd))
         return "DRY"
@@ -181,7 +181,7 @@ def safe(v: str) -> str:
 
 
 def cmd_train(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("train", a)
+    home, c = hjepa_home(), cluster("train", a)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", a.sweep):
         die(f"--sweep {a.sweep!r}: give a descriptive, filesystem-safe name")
     for o in overrides:
@@ -236,7 +236,7 @@ def cmd_train(a, overrides: list) -> None:
 
 
 def cmd_resume(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("resume", a)
+    home, c = hjepa_home(), cluster("resume", a)
     rd = Path(a.run_dir).resolve()
     if below := [d for d in [*rd.glob("*"), *rd.glob("*/*")] if d.is_dir() and is_run(d)]:
         die(f"{rd} contains {len(below)} run dirs (a sweep dir?): resume one run dir")
@@ -268,7 +268,7 @@ def env_of(cfg: OmegaConf) -> str:  # runs made before the train configs had an 
 
 
 def cmd_eval(a, overrides: list) -> None:
-    home, c = stablewm_home(), cluster("eval", a)
+    home, c = hjepa_home(), cluster("eval", a)
     root = Path(a.target).resolve()
     runs = [root] if is_run(root) else []
     for dp, dns, fns in [] if runs else os.walk(root):

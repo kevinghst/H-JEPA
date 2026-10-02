@@ -1,7 +1,8 @@
-"""Paper runs behind each release training config (seed placeholder {s}), relative to $STABLEWM_HOME/ckpts."""
+"""Paper runs behind each release training config (seed placeholder {s}), relative to $HJEPA_HOME/ckpts."""
 import os
+import re
 
-ROOT = os.path.join(os.environ["STABLEWM_HOME"], "ckpts") + "/"
+ROOT = os.path.join(os.environ["HJEPA_HOME"], "ckpts") + "/"
 R = {
     "ant": {"lewm": "ant/7-28-2/ant_level1_union_ds_seed{s}__stage1", "hjepa_l2": "ant/9-6-3/1/seed{s}",
             "hjepa_l3": "ant/9-6-1/1/seed{s}", "hjepa_l4": "ant/9-6-2/1/seed{s}", "hwm_l2": "ant/9-12-5/0/seed{s}",
@@ -23,3 +24,10 @@ def checkpoint(env, model, seed):
     run = ROOT + R[env][model].format(s=seed)
     name = os.path.basename(run) if model == "lewm" and env != "fourroom" else "model"
     return f"{run}/{name}_object.ckpt"
+
+
+def rename_datasets(cfg):
+    # The release renamed the paper datasets (dropped `_2_5x` and the FourRoom `fourroom_7_21/tp35/` dirs).
+    return {k: re.sub(r"visual_antmaze_medium_(stitch_val|probing_train|probing_eval)_2_5x", r"visual_antmaze_medium_\1",
+                      v).replace("fourroom_7_21/tp35/", "") if isinstance(v, str) else v
+            for k, v in cfg.items()}

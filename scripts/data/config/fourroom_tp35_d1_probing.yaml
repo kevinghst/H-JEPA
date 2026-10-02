@@ -1,4 +1,4 @@
-cache_dir: ${oc.env:STABLEWM_HOME}/fourroom_7_21/tp35
+cache_dir: null
 dataset_name: fourroom_tp35_d1_probing
 world:
   env_name: swm/FourRoomDistractors-v0

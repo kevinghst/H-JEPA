@@ -4,7 +4,7 @@ data:
   dataset:
     name: visual_antmaze_medium_explore_stitch_train
     subset_seed: ${seed}
-    val_name: visual_antmaze_medium_stitch_val_2_5x
+    val_name: visual_antmaze_medium_stitch_val
     val_total_transitions: 201000
     keys_to_load:
     - pixels
@@ -31,7 +31,7 @@ env: ant
 subdir: ${env}/${output_model_name}/seed${seed}
 hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
   run:
-    dir: ${oc.env:STABLEWM_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
+    dir: ${oc.env:HJEPA_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
 quick_debug: false
 num_workers: 6
 seed: 42

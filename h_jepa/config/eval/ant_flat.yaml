@@ -1,6 +1,6 @@
 # Visual AntMaze: flat level-1 planning (LeWM).
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 world:
   env_name: swm/OGBAntMaze-v0
   num_envs: ${eval.num_eval}
@@ -15,7 +15,7 @@ world:
   dataset_type: stitch
   terminate_at_goal: true
 dataset:
-  stats: visual_antmaze_medium_stitch_val_2_5x
+  stats: visual_antmaze_medium_stitch_val
   keys_to_cache:
   - action
   - xy
@@ -60,7 +60,7 @@ eval:
   goal_state_mode: xy_neutral
   eval_budget: 350
   img_size: 64
-  dataset_name: visual_antmaze_medium_stitch_val_2_5x
+  dataset_name: visual_antmaze_medium_stitch_val
   callables:
   - method: set_state
     args:

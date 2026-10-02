@@ -35,7 +35,7 @@ def build_model(num_levels, stride, window):
                     "d_model": 128, "nhead": 4, "num_layers": 1,
                     "projector": {"type": "identity"},
                 })
-    model, _, _ = create_world_model(cfg)
+    model, _ = create_world_model(cfg)
     return model.to(DEVICE).eval()
 
 

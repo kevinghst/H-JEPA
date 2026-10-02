@@ -1,6 +1,6 @@
 # FourRoom Distractors: 2-level hierarchical planning, shared by H-JEPA and HWM.
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 world:
   env_name: swm/FourRoomDistractors-v0
   num_envs: ${eval.num_eval}
@@ -38,7 +38,7 @@ world:
   history_size: 1
   frame_skip: 1
 dataset:
-  stats: fourroom_7_21/tp35/fourroom_tp35_d1
+  stats: fourroom_tp35_d1
   keys_to_cache:
   - action
   - xy
@@ -52,7 +52,7 @@ policy: null
 dump_eval_trajs_path: null
 load_eval_trajs_path: assets/eval_trajs/fourroom/fourroom_tp35_cross2_goal75_n50_d1.pt
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver
@@ -102,7 +102,7 @@ eval:
   goal_offset_steps: 60
   eval_budget: 210
   img_size: 224
-  dataset_name: fourroom_7_21/tp35/fourroom_tp35_d1_val
+  dataset_name: fourroom_tp35_d1_val
   callables:
   - method: _set_state
     args:

@@ -1,6 +1,6 @@
 # Visual AntMaze: 3-level hierarchical planning, shared by H-JEPA and HWM.
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 world:
   env_name: swm/OGBAntMaze-v0
   num_envs: ${eval.num_eval}
@@ -15,7 +15,7 @@ world:
   dataset_type: stitch
   terminate_at_goal: true
 dataset:
-  stats: visual_antmaze_medium_stitch_val_2_5x
+  stats: visual_antmaze_medium_stitch_val
   keys_to_cache:
   - action
   - xy
@@ -34,7 +34,7 @@ policy: null
 dump_eval_trajs_path: null
 load_eval_trajs_path: assets/eval_trajs/ant/expert_grid_d3_n50.pt
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver
@@ -108,7 +108,7 @@ eval:
   goal_state_mode: xy_neutral
   eval_budget: 350
   img_size: 64
-  dataset_name: visual_antmaze_medium_stitch_val_2_5x
+  dataset_name: visual_antmaze_medium_stitch_val
   callables:
   - method: set_state
     args:

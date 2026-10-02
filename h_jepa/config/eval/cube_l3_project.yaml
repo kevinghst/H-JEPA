@@ -2,7 +2,7 @@
 # (cost-ladder tables). Levels 2-4 have horizon 1, so their solves are skipped;
 # horizon_one_goal_cost_space=upper on levels 2..3 chains the projection up to level 3.
 # Levels above the model's depth are dropped, so this config serves 2/3/4-level models.
-cache_dir: ${oc.env:STABLEWM_HOME}
+cache_dir: ${oc.env:HJEPA_HOME}
 world:
   env_name: swm/OGBCube-v0
   num_envs: ${eval.num_eval}
@@ -28,7 +28,7 @@ policy: null
 dump_eval_trajs_path: null
 load_eval_trajs_path: assets/eval_trajs/ogbench/goal_offset_20_pickup_val.pt
 solver:
-  _target_: stable_worldmodel.solver.HierarchicalSolver
+  _target_: hierarchical_solver.HierarchicalSolver
   solvers:
     level1:
       _target_: stable_worldmodel.solver.GradientSolver

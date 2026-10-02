@@ -64,6 +64,3 @@ level2:
       sigreg:
         enabled: true
         weight: 0.16
-  probes:
-    inputs:
-      proprio: null
