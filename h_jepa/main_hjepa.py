@@ -292,6 +292,7 @@ def run(cfg):
         seed=cfg.seed,
         output_subdir=_pe.output_subdir,
         run_on_train_end=bool(_pe.run_on_train_end),
+        every_n_epochs=int(_pe.every_n_epochs),
     )
     train_batch_limit_callback = TrainBatchLimitCallback(
         cfg.get("max_train_batches_total", None)

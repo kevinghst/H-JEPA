@@ -206,7 +206,8 @@ stable-pretraining cache `spt/` included):
 
 - `<env>_<model>_object.ckpt`: the trained model;
 - `planning_eval/epoch_XXXX/metrics.yaml`: the planning eval run at the end of training with the
-  matching planner (`<env>_flat` for LeWM, `<env>_l<n>` for an n-level model), planner seed = model seed;
+  matching planner (`<env>_flat` for LeWM, `<env>_l<n>` for an n-level model), planner seed = model seed
+  (`planning_eval.every_n_epochs=N` also runs it every N epochs; off by default);
 - `final_probing_decoding_eval/`: probes and decoders trained on the frozen model
   (`config/probing/<env>.yaml`).
 

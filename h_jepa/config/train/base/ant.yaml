@@ -39,7 +39,7 @@ img_size: 64
 patch_size: 4
 encoder_scale: tiny
 dump_object: true
-save_every_n_epochs: 2
+save_every_n_epochs: 1
 resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
 max_train_batches_total: null
 trainer:
@@ -75,6 +75,7 @@ planning_eval:
   config_name: ???
   output_subdir: planning_eval
   run_on_train_end: true
+  every_n_epochs: 0  # also run the planning eval every N epochs (0 = end of training only)
 final_probing_decoding_eval:
   enabled: true
   config_name: ant

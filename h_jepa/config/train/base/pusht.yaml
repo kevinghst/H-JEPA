@@ -84,6 +84,7 @@ planning_eval:
   config_name: ???
   output_subdir: planning_eval
   run_on_train_end: true
+  every_n_epochs: 0  # also run the planning eval every N epochs (0 = end of training only)
 final_probing_decoding_eval:
   enabled: true
   config_name: pusht

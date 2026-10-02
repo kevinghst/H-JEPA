@@ -242,7 +242,8 @@ class TrainBatchLimitCallback(Callback):
 
 
 class PlanningEvalCallback(Callback):
-    """Run the planning eval once at the end of training, with planner seed = model seed."""
+    """Run the planning eval at the end of training and, if `every_n_epochs` > 0, every
+    `every_n_epochs` epochs; planner seed = model seed."""
 
     def __init__(
         self,
@@ -253,6 +254,7 @@ class PlanningEvalCallback(Callback):
         seed,
         output_subdir="planning_eval",
         run_on_train_end=True,
+        every_n_epochs=0,
     ):
         super().__init__()
         self.enabled = enabled
@@ -261,6 +263,8 @@ class PlanningEvalCallback(Callback):
         self.seed = int(seed)
         self.output_subdir = output_subdir
         self.run_on_train_end = run_on_train_end
+        self.every_n_epochs = int(every_n_epochs)
+        self._last_eval_step = None
 
     @staticmethod
     def _set_planning_seed(cfg, seed):
@@ -314,8 +318,21 @@ class PlanningEvalCallback(Callback):
 
         self._log_metrics(trainer, metrics, trainer.global_step)
 
+    def on_train_epoch_end(self, trainer, pl_module):
+        epoch = trainer.current_epoch + 1
+        if not self.enabled or not self.every_n_epochs or epoch % self.every_n_epochs:
+            return
+
+        trainer.strategy.barrier("planning_eval_epoch_start")
+        if trainer.is_global_zero:
+            self._run_eval(trainer, pl_module, epoch)
+        trainer.strategy.barrier("planning_eval_epoch_end")
+        self._last_eval_step = trainer.global_step
+
     def on_train_end(self, trainer, pl_module):
         if not self.enabled or not self.run_on_train_end or trainer.global_step <= 0:
+            return
+        if self._last_eval_step == trainer.global_step:
             return
 
         trainer.strategy.barrier("planning_eval_final_start")
