@@ -1,5 +1,8 @@
-from functools import partial
 import os
+
+os.environ['MUJOCO_GL'] = 'egl'
+
+from functools import partial
 from pathlib import Path
 
 import hydra
