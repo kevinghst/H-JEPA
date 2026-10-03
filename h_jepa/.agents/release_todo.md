@@ -308,6 +308,11 @@ DROID (not ported from the original code)
 
 ## Kept on purpose
 
+- `scripts/slurm/launch.py` (+ `default.yaml`, gitignored `local.yaml`): optional SLURM launcher for train sweeps,
+  resumes and per-epoch evals, README 3.6. Not on the reproduction path (`train_all.sh` / `eval_*.sh` call
+  `main_hjepa.py` / `eval.py` directly), but it trained and evaluated the release DROID models (provenance.md).
+  Moved from `h_jepa/launch.py` + `config/slurm/` on 2026-10-03; eval wall-clock is `eval.time_by_env` (was the
+  top-level `eval_time`, which silently overrode any `time` set in the `eval:` block).
 - `droid_data.py`: the one non-HDF5 loader. DROID episodes are the 256x256 mp4s, decoded with `decord`.
   `DROIDDataset(HDF5Dataset)` reuses `HDF5Dataset._setup_levels` (level configs and span, hoisted out of
   `HDF5Dataset.__init__`, Kevin's behaviour unchanged) and the inherited `__getitem__` / `load_chunk` /

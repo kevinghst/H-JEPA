@@ -66,6 +66,7 @@ h_jepa/
   droid_eval.py             offline DROID planning eval on the 16 evaluation clips (eval.py)
   droid_assets/             DROID normalization stats and evaluation-clip manifest
   scripts/                  eval-task generators and the train/eval helper scripts
+  scripts/slurm/            optional SLURM launcher for training sweeps and per-epoch evals (3.6)
   ARCHITECTURE.md           how training, the hierarchy and planning fit together
 ```
 
@@ -201,18 +202,6 @@ python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null 
 python main_hjepa.py --config-name <env>_<model> seed=<seed>
 ```
 
-On SLURM, one process per GPU (here 2) through `srun`; `--requeue` is safe, a restarted job resumes
-from `<run_dir>/lightning_resume/last.ckpt`:
-
-```bash
-#!/bin/bash
-#SBATCH --nodes=1 --ntasks-per-node=2 --gpus-per-node=2 --cpus-per-task=16 --mem=200G --requeue
-source /path/to/.venv/bin/activate
-cd /path/to/H-JEPA/h_jepa
-export HJEPA_HOME=/path/to/hjepa_home PYTHONPATH=$PWD/..:$PWD MUJOCO_GL=egl
-srun python main_hjepa.py --config-name droid_hjepa_l2 seed=1    # trainer.devices = 2 in base/droid
-```
-
 A run writes to `$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
 stable-pretraining cache `spt/` included):
 
@@ -251,6 +240,33 @@ With `+eval.chunk_size=N` the tasks are evaluated N at a time and each chunk wri
 `chunks/tasks_<start>-<end>.json` to `output.dir`; a rerun skips the chunks already written, so a
 preempted (requeued) eval only redoes the chunk it was in. `metrics.yaml` keeps the same keys; each chunk
 reseeds the planner with the seed plus its first task index (a single chunk plans as the unchunked eval).
+
+### 3.6) Running on SLURM (optional)
+
+`scripts/slurm/launch.py` submits training sweeps, resumes and per-epoch planning evals as SLURM jobs.
+Nothing else depends on it; the commands above run the same code directly. Set your cluster in
+`scripts/slurm/local.yaml` (gitignored), which overrides `scripts/slurm/default.yaml`:
+
+```yaml
+venv: /path/to/.venv     # its bin/python runs the jobs
+partition: gpu
+account: my_account
+qos: normal
+```
+
+```bash
+# one job per seed: $HJEPA_HOME/ckpts/cube/my_sweep_<timestamp>/cube_hjepa_l3/seed<seed>/
+python scripts/slurm/launch.py train --config-name cube_hjepa_l3 --sweep my_sweep --seeds 42,43,44
+# relaunch one run from lightning_resume/last.ckpt
+python scripts/slurm/launch.py resume <run_dir>
+# one eval.py job per saved epoch checkpoint: <run_dir>/eval_epoch/epoch_<N>/
+python scripts/slurm/launch.py eval <sweep_dir|run_dir> --epochs last
+```
+
+`--grid key=v1,v2` (repeatable) adds a grid over hydra overrides, `--dry` prints the `sbatch` lines without
+submitting. A sweep's jobs run from a copy of the repo taken at submission (`<sweep_dir>/code`), so later
+edits do not reach them. Wall-clock limits are `time` for training and `eval.time_by_env` for evals;
+`--time` overrides both.
 
 ## 4) Reproducing Fourroom, Visual AntMaze, OGBench Cube, Push-T
 

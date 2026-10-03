@@ -1,9 +1,9 @@
 """SLURM launcher for H-JEPA training, resume and per-epoch planning eval, any env. Run from h_jepa/.
 
-  python launch.py train --config-name cube_lewm --sweep crop_ab [--seeds 42,43,44] \\
+  python scripts/slurm/launch.py train --config-name cube_lewm --sweep crop_ab [--seeds 42,43,44] \\
       [--grid level1.wm.history_size=3,7 ...] [--into <sweep_dir>] [hydra overrides ...]
-  python launch.py resume <run_dir> [hydra overrides, e.g. trainer.max_epochs=100]
-  python launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [eval.py overrides]
+  python scripts/slurm/launch.py resume <run_dir> [hydra overrides, e.g. trainer.max_epochs=100]
+  python scripts/slurm/launch.py eval <sweep_dir|run_dir> [--epochs all|last|N,M] [eval.py overrides]
   common flags: --partition P --account A --qos Q --time HH:MM:SS --gpus N --mem 200G --dry
 
 train   One job per (grid cell x seed) in $HJEPA_HOME/ckpts/<env>/<sweep>_<YYYY-MM-DD_HH-MM>/<cell>/seed<S>,
@@ -15,7 +15,7 @@ eval    One job per <run>/<name>_epoch_<N>_object.ckpt under the target: eval.py
         planner seed = model seed -> <run>/eval_epoch/epoch_<N>/ (metrics.yaml; DROID: eval.csv). Evals run from
         <sweep_dir>/eval_code, frozen from the worktree at the sweep's first eval (mv it aside to refresh).
 Every check (config composes, datasets exist, no live job, fresh dirs absent) runs before any sbatch.
-Cluster settings: config/slurm/default.yaml < local.yaml < flags. Jobs requeue on preemption, append to
+Cluster settings: scripts/slurm/default.yaml < local.yaml < flags. Jobs requeue on preemption, append to
 <run_dir>/slurm/%x_%j.out and run the code copy's main_hjepa.py (srun, one task per GPU) or eval.py.
 """
 
@@ -34,7 +34,8 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
-H = Path(__file__).resolve().parent
+S = Path(__file__).resolve().parent
+H = S.parents[1]
 REPO = H.parent
 SET_BY_LAUNCHER = {"seed", "subdir", "output_model_name", "trainer.devices"}
 LIVE = "PENDING,CONFIGURING,RUNNING,SUSPENDED,REQUEUED,REQUEUE_HOLD,RESIZING"  # not COMPLETING
@@ -53,16 +54,16 @@ def hjepa_home() -> Path:
 
 
 def cluster(sub: str, a: argparse.Namespace) -> OmegaConf:
-    c = OmegaConf.load(H / "config/slurm/default.yaml")
-    if (H / "config/slurm/local.yaml").exists():
-        c = OmegaConf.merge(c, OmegaConf.load(H / "config/slurm/local.yaml"))
+    c = OmegaConf.load(S / "default.yaml")
+    if (S / "local.yaml").exists():
+        c = OmegaConf.merge(c, OmegaConf.load(S / "local.yaml"))
     if a.partition and not a.account:
         die("--partition needs --account too (they are set together)")
     flags = {k: getattr(a, k) for k in ("partition", "account", "qos", "time", "mem") if getattr(a, k)}
     c = OmegaConf.merge(c, c.get(sub) or {}, flags, {"gpus_per_node": a.gpus} if a.gpus else {})
     keys = ("venv", "partition", "account", "qos", "gpus_per_node", "cpus_per_task", "mem", "time")
     if missing := [k for k in keys if c.get(k) in (None, "")]:
-        die(f"cluster settings missing {missing}: set them in {H}/config/slurm/local.yaml")
+        die(f"cluster settings missing {missing}: set them in {S}/local.yaml")
     if not Path(c.venv, "bin/python").exists():
         die(f"venv {c.venv} has no bin/python")
     return c
@@ -119,7 +120,7 @@ def is_run(d: Path) -> bool:
 
 
 def submit(c, home: Path, name: str, log_dir: Path, gpus: int, code: Path, args: list, dry: bool) -> str | None:
-    job = shlex.join([f"{c.venv}/bin/python", str(H / "launch.py"), "_job", str(code), *args])
+    job = shlex.join([f"{c.venv}/bin/python", str(S / "launch.py"), "_job", str(code), *args])
     cmd = ["sbatch", "--parsable", f"--job-name={name}", f"--partition={c.partition}",
            f"--account={c.account}", f"--qos={c.qos}", f"--time={c.time}", "--nodes=1", "--requeue",
            "--open-mode=append", f"--ntasks-per-node={gpus}", f"--gpus-per-node={gpus}", f"--mem={c.mem}",
@@ -303,7 +304,7 @@ def cmd_eval(a, overrides: list) -> None:
                 except PermissionError:
                     print(f"WARNING: cannot stat eval tasks {t}")
                 checked.add(ecfg)
-            plan.append((rd, name, f"{ecfg}|{seed}|{eps[e]}|{out}", c.eval_time.get(env, c.eval_time.default)))
+            plan.append((rd, name, f"{ecfg}|{seed}|{eps[e]}|{out}", c.time_by_env.get(env, c.time_by_env.default)))
     print(f"{len(runs)} runs, {ndone} evals done, {len(plan)} to run")
     if not plan:
         return

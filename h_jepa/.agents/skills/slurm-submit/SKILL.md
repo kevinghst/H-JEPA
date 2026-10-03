@@ -27,7 +27,7 @@ sbatch .agents/skills/slurm-submit/run.sbatch "<command>"
 ```
 
 - One `sbatch` call is one job; several command strings in one call run sequentially in that job.
-  Submit one call per command to run them in parallel. Training, resume and eval sweeps normally go through `launch.py` (it submits itself; logs in `<run_dir>/slurm/`); this skill is for one-off commands.
+  Submit one call per command to run them in parallel. Training, resume and eval sweeps normally go through `scripts/slurm/launch.py` (it submits itself; logs in `<run_dir>/slurm/`); this skill is for one-off commands.
 - Commands run with cwd `h_jepa/`. Scripts outside it (e.g. `scripts/data/*.py` at the repo root)
   need absolute paths.
 - Hydra scripts take `--config-name <stem>`, resolved against the script's own config dir.

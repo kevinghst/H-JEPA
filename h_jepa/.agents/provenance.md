@@ -99,7 +99,7 @@ The README tables come from the paper-figure data in the development repo
 
 ## DROID
 
-The release DROID models are trained with this repo (`launch.py train`), three seeds each
+The release DROID models are trained with this repo (`scripts/slurm/launch.py train`), three seeds each
 (1, 1000, 10000). Paths are relative to `$HJEPA_HOME/ckpts/droid`.
 
 ### Training configs (`config/train/droid_<model>.yaml`)
@@ -119,7 +119,7 @@ The release DROID models are trained with this repo (`launch.py train`), three s
 
 ### Planning configs (`config/eval/droid_{flat,l2}.yaml`)
 
-Paper cells are `eval_<plan>/epoch_<N>/` cells of `launch.py eval` with GD ladder `ns{S}_lr{η}[_l2lr{η2}]`:
+Paper cells are `eval_<plan>/epoch_<N>/` cells of `scripts/slurm/launch.py eval` with GD ladder `ns{S}_lr{η}[_l2lr{η2}]`:
 
 | model | planner | S | η (level 1, level 2) | cell |
 |---|---|---|---|---|
