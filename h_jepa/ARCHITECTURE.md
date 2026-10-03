@@ -2,7 +2,7 @@
 
 This document covers the two entry points for working with the hierarchical world model:
 - **Training**: `main_hjepa.py`
-- **Planning eval**: `eval.py` → `planning_eval.py` → `hierarchical_solver.py` (DROID clip configs: `droid_eval.py`)
+- **Planning eval**: `eval.py` → `planning_eval.py` / `droid_eval.py` → `hierarchical_solver.py`
 
 ---
 
