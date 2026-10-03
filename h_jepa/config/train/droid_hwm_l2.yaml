@@ -58,6 +58,3 @@ level2:
     embed:
       sigreg:
         enabled: false
-  probes:
-    inputs:
-      proprio: null

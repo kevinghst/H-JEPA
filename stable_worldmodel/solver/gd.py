@@ -70,7 +70,7 @@ class GradientSolver(torch.nn.Module):
         self._action_dim = None
         self._config = None
         # Per-solve compute metadata, appended on every solve() call; collected by
-        # the eval to compute planner FLOPs (see planning_eval._collect_solve_records).
+        # the eval to compute planner FLOPs (see planning_eval.pop_solve_records).
         self.solve_records = []
 
     def configure(

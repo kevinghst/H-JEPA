@@ -66,12 +66,8 @@ wandb:
     log_model: false
 planning_eval:
   enabled: false
-  every_n_epochs: 0
   config_name: null
   output_subdir: planning_eval
-  seeds:
-  - ${seed}
-  run_on_train_start: false
   run_on_train_end: false
 final_probing_decoding_eval:
   enabled: false

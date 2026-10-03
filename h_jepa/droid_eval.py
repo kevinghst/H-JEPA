@@ -1,4 +1,4 @@
-"""Offline DROID planning eval on the 16 curated waypoint clips (5 fps, goal window 36).
+"""Offline DROID planning eval on the 16 curated waypoint clips (5 fps, goal window 36), run by eval.py.
 
 Each clip is planned start -> goal in one open-loop call and scored against the
 ground-truth actions:
@@ -8,42 +8,43 @@ ground-truth actions:
   * Frechet skill-over-floor: discrete-Frechet distance between the planned and GT
     cumulative xyz paths, as a fraction of the do-nothing floor.
 
-Planner settings come from config/eval/<--config>.yaml (droid_flat, droid_l2, droid_l3,
-droid_l4). --lr / --num-samples take one value per level, level 1 first; the last value
-also applies to the levels above. Paper cells:
-  flat     --lr 0.01 --num-samples 16
-  HWM      --config droid_l2 --lr 0.01 0.1  --num-samples 16
-  H-JEPA   --config droid_l2 --lr 0.03 0.01 --num-samples 4
+Planner settings come from config/eval/droid_{flat,l2}.yaml, overridable from the command line.
+Paper cells (planner lr per level, level 1 first):
+  LeWM+IDM  --config-name droid_flat solver.optimizer_kwargs.lr=0.01
+  HWM       --config-name droid_l2 solver.solvers.level1.optimizer_kwargs.lr=0.01
+            solver.solvers.level2.optimizer_kwargs.lr=0.3
+  H-JEPA    --config-name droid_l2 solver.solvers.level1.optimizer_kwargs.lr=0.01
+            solver.solvers.level2.optimizer_kwargs.lr=0.01
 
-Outputs under <out>/<tag>/: ep_{k}/actions.pt ({"planned", "gt", "grasp_pos"}, raw
-units; k = manifest index), ep_{k}/planning_compute.json, plan_config.yaml and
+Outputs under output.dir (relative: to the ckpt dir): ep_{k}/actions.pt ({"planned", "gt",
+"grasp_pos"}, raw units; k = manifest index), ep_{k}/planning_compute.json, plan_config.yaml and
 eval.csv, aggregated over every ep_*/actions.pt present so one-clip shards
-(--start-index k --num-eval 1) can share one out dir.
+(start_index=k num_eval=1) can share one output dir.
 
-  python droid_plan_eval.py --ckpt $RUN/<run>_object.ckpt
-  python droid_plan_eval.py --config droid_l2 --ckpt $HRUN/<run>_object.ckpt --out $OUT
+  python eval.py --config-name droid_flat policy=$RUN/<run>_object.ckpt seed=1 output.dir=$OUT
 """
 
-import argparse
 import csv
 import json
 import time
 from pathlib import Path
 
 import gymnasium
-import hydra
 import numpy as np
-import stable_worldmodel as swm
 import torch
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from torchvision.transforms import v2 as transforms
 
-from data import IMAGENET_STATS, NORMALIZER_ARTIFACT_FILENAME, load_normalizer_artifact
-from eval_config_utils import _build_policy_plan_config, _is_hierarchical_solver
-from hierarchical_solver import build_hierarchical_solver
+from data import IMAGENET_STATS
+from eval_config_utils import _build_policy_plan_config
+from planning_eval import (
+    _load_policy_normalizer_artifact,
+    build_solver,
+    load_model,
+    pop_solve_records,
+    resolve_results_dir,
+)
 from traj_metrics import cumulative_delta, frechet_skill_over_floor
-
-CONFIG_DIR = Path(__file__).resolve().parent / "config" / "eval"
 
 
 def _ate_components(delta: torch.Tensor, suffix: str = "") -> dict:
@@ -106,40 +107,6 @@ def img_transform(img_size: int) -> transforms.Compose:
     )
 
 
-def load_config(args):
-    cfg = OmegaConf.load(CONFIG_DIR / f"{args.config}.yaml")
-    if args.seed is not None:
-        cfg.seed = args.seed
-    levels = cfg.solver.solvers.values() if _is_hierarchical_solver(cfg) else [cfg.solver]
-    for i, solver_cfg in enumerate(levels):
-        if args.lr:
-            solver_cfg.optimizer_kwargs.lr = args.lr[min(i, len(args.lr) - 1)]
-        if args.num_samples:
-            solver_cfg.num_samples = args.num_samples[min(i, len(args.num_samples) - 1)]
-    return cfg
-
-
-def build_solver(cfg, model, action_dim: int):
-    if _is_hierarchical_solver(cfg):
-        solver = build_hierarchical_solver(cfg, model)
-    else:
-        solver = hydra.utils.instantiate(cfg.solver, model=model)
-    solver.configure(
-        action_space=gymnasium.spaces.Box(-1.0, 1.0, shape=(1, action_dim)),
-        n_envs=1,
-        config=_build_policy_plan_config(cfg),
-    )
-    return solver
-
-
-def pop_solve_records(solver) -> list:
-    solvers = getattr(solver, "level_solvers", {1: solver})
-    records = [r for level in sorted(solvers) for r in solvers[level].solve_records]
-    for s in solvers.values():
-        s.solve_records = []
-    return records
-
-
 def plan_clip(solver, tf, obs: dict, action_dim: int, eval_budget: int) -> np.ndarray:
     info = {
         "pixels": tf(obs["visual"][0])[None, None].cuda(),  # [1, 1, C, H, W]
@@ -149,26 +116,11 @@ def plan_clip(solver, tf, obs: dict, action_dim: int, eval_budget: int) -> np.nd
     return solver(info, steps_taken=0, eval_budget=eval_budget)["actions"][0].cpu().numpy()  # [K, A], normalized
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    p.add_argument("--ckpt", required=True, help="<run>_object.ckpt")
-    p.add_argument("--config", default="droid_flat", help="Eval config in config/eval/")
-    p.add_argument("--out", default=None, help="Base output dir (default: the ckpt dir)")
-    p.add_argument("--tag", default="wp_5fps_gw36_cur16v2", help="Output subfolder")
-    p.add_argument("--start-index", type=int, default=0, help="First manifest clip")
-    p.add_argument("--num-eval", type=int, default=None, help="Clips from --start-index")
-    p.add_argument("--seed", type=int, default=None, help="Planner seed (default: yaml)")
-    p.add_argument("--lr", type=float, nargs="+", help="AdamW lr per level (default: yaml)")
-    p.add_argument("--num-samples", type=int, nargs="+", help="Samples per level (default: yaml)")
-    args = p.parse_args()
-    cfg = load_config(args)
-
+def run_clip_eval(cfg: DictConfig, model=None, results_dir: str | Path | None = None) -> None:
     from droid_data import DROIDClipReader
 
-    ckpt_path = Path(args.ckpt)
-    out_dir = Path(args.out or ckpt_path.parent) / args.tag
+    cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
+    out_dir = resolve_results_dir(cfg, results_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     clips = Path(__file__).resolve().parent / cfg.clips
@@ -182,26 +134,23 @@ def main() -> None:
         frozen_clips=str(clips),
         deterministic_getitem=True,
     )
-    stop = len(ds) if args.num_eval is None else min(args.start_index + args.num_eval, len(ds))
-    clip_ids = range(args.start_index, stop)
+    stop = len(ds) if cfg.num_eval is None else min(cfg.start_index + cfg.num_eval, len(ds))
+    clip_ids = range(cfg.start_index, stop)
 
-    if _is_hierarchical_solver(cfg):
-        model = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    else:
-        model = swm.policy.AutoCostModel(str(ckpt_path))
-    model = model.eval().to("cuda")
-    model.interpolate_pos_encoding = True
-
-    normalizer = load_normalizer_artifact(ckpt_path.parent / NORMALIZER_ARTIFACT_FILENAME)
-    action_stats = normalizer["stats"]["action"]
+    model = load_model(cfg, model)
+    action_stats = _load_policy_normalizer_artifact(cfg)["stats"]["action"]
     act_mean = np.asarray(action_stats["mean"]).reshape(-1)  # [A]
     act_std = np.asarray(action_stats["std"]).reshape(-1)  # [A]
     action_dim = act_mean.shape[0]
 
-    solver = build_solver(cfg, model, action_dim)
-    cfg.ckpt = str(ckpt_path)
+    solver = build_solver(cfg, model)
+    solver.configure(
+        action_space=gymnasium.spaces.Box(-1.0, 1.0, shape=(1, action_dim)),
+        n_envs=1,
+        config=_build_policy_plan_config(cfg),
+    )
     OmegaConf.save(cfg, out_dir / "plan_config.yaml", resolve=True)
-    print(f"clips {clip_ids.start}..{clip_ids.stop - 1} of {len(ds)} | ckpt={ckpt_path}")
+    print(f"clips {clip_ids.start}..{clip_ids.stop - 1} of {len(ds)} | ckpt={cfg.policy}")
 
     tf = img_transform(cfg.img_size)
     t0 = time.time()
@@ -233,6 +182,3 @@ def main() -> None:
     print(f"Frechet skill mean: {agg['frechet/skill_mean']:.4f}")
     print(f"Frechet skill median (weighted): {agg['frechet/skill_median_weighted']:.4f}")
 
-
-if __name__ == "__main__":
-    main()
