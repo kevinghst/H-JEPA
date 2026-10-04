@@ -1,8 +1,13 @@
-# DROID: 2-level hierarchical planning, read by droid_plan_eval.py (offline, open-loop).
+# DROID: 2-level hierarchical planning, run by eval.py (droid_eval.py, offline, open-loop).
 # Level 2 plans 12 macro-steps (36 // stride 3) scored on the endpoint and passes all 12
 # as subgoals; level 1 plans the 36-step goal window scoring every subgoal (weight 0.5 on
 # the intermediate ones). Defaults are the release cell of both HWM and H-JEPA (README §5.3).
+policy: ???
 seed: 1234
+output:
+  dir: ???
+start_index: 0
+num_eval: null
 clips: droid_assets/droid_clips_waypoint_curated16v2_5fps_gw36.json
 img_size: 256
 eval_budget: 36

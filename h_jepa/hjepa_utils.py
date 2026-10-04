@@ -72,8 +72,8 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
         nsteps = level_cfg.wm.get("nsteps", None)
         if nsteps is not None:
             pred_passes = jepa.parallel_unroll(emb, act_emb, int(nsteps))
-            pred_emb = pred_passes.mean(dim=0)
-            tgt_emb = emb
+            pred_emb = pred_passes.mean(dim=0)[:, 1:]
+            tgt_emb = emb[:, 1:]
         elif rollout_n == 1:
             teacher_pred = jepa.predict(emb[:, :history_size], act_emb[:, :history_size])
             pred_emb = teacher_pred
@@ -101,21 +101,20 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
         for component, component_cfg in _loss_components(level_cfg.loss).items():
             component_emb = output[_component_key(component, level)]
             component_loss = None
+            tgt_component = (
+                component_emb.detach() if level_cfg.wm.get("detach_pred_target") else component_emb
+            )
 
             if _loss_term_enabled(component_cfg, "pred") and nsteps is not None:
-                pred_component = _pred_component(pred_passes, output, level, component)
-                tgt_component = (
-                    component_emb.detach() if level_cfg.wm.get("detach_pred_target") else component_emb
-                )
-                pred_loss = (
-                    (pred_component - tgt_component.unsqueeze(0)).square().flatten(1).mean(dim=1).mean()
-                )
+                # Position 0 is the re-injected ground truth: score frames 1..T only, as teacher forcing.
+                pred_component = _pred_component(pred_passes, output, level, component)[:, :, 1:]
+                pred_loss = F.mse_loss(pred_component, tgt_component[:, 1:].unsqueeze(0).expand_as(pred_component))
                 output[_component_loss_key("pred", component, level_suffix)] = pred_loss
                 component_loss = _loss_term_weight(component_cfg, "pred") * pred_loss
             elif _loss_term_enabled(component_cfg, "pred"):
                 teacher_forcing_loss = F.mse_loss(
                     _pred_component(teacher_pred, output, level, component),
-                    component_emb[:, 1 : history_size + 1],
+                    tgt_component[:, 1 : history_size + 1],
                 )
                 output[_component_loss_key("teacher_forcing", component, level_suffix)] = (
                     teacher_forcing_loss
@@ -125,7 +124,7 @@ def hjepa_forward(self, batch, stage, cfg, *, normalize_batch):
                 else:
                     rollout_loss = F.mse_loss(
                         _pred_component(pred_emb, output, level, component),
-                        component_emb[:, history_size : history_size + rollout_n],
+                        tgt_component[:, history_size : history_size + rollout_n],
                     )
                     output[_component_loss_key("rollout", component, level_suffix)] = rollout_loss
                     if history_size > 1:

@@ -6,11 +6,11 @@ description: Verify that a change to the H-JEPA release keeps the paper results 
 # Release Check
 
 The release must stay equivalent to the runs behind the paper. Four checks, from cheapest to most
-expensive. Run from `/mnt/vast/home/kevin/H-JEPA/h_jepa` with
+expensive. Run from `$REPO/h_jepa` with
 
 ```bash
-export PYTHONPATH=/mnt/vast/home/kevin/H-JEPA:/mnt/vast/home/kevin/H-JEPA/h_jepa
-export HJEPA_HOME=/mnt/vast/home/kevin/stable-wm-lejepa/datasets
+export PYTHONPATH=$REPO:$REPO/h_jepa
+# HJEPA_HOME must point at the data root holding ckpts/ and eval assets
 S=.agents/skills/release-check/scripts
 ```
 
@@ -29,8 +29,8 @@ configs have known behavior-neutral differences: `level1.lr` (equals `optimizer.
 `level1.probes.enabled` (online probes are diagnostics), Ant's
 `val_total_transitions` (validation only). All four LeWM configs also differ in `trainer.max_epochs`
 (Ant 7, Cube / FourRoom / Push-T 10, vs the paper's batch-capped 50 and FourRoom's 11; not behavior-neutral, see `.agents/provenance.md`). Keys removed on purpose during the cleanup are
-listed in the scripts' `REMOVED` patterns (checkpoint cadence, `save_every_n_epochs` / `resume_every_n_steps`,
-is in `IGNORED`); when you remove another config key, add it there.
+listed in the scripts' `REMOVED` patterns, and the checkpoint cadence (`save_every_n_epochs` /
+`resume_every_n_steps`) in `IGNORED`; when you remove another config key, add it there.
 
 ## 2. Training step is unchanged (a minute, GPU)
 
@@ -41,9 +41,9 @@ python $S/fwd_test.py --compare .agents/skills/release-check/reference/fwd_losse
 
 Builds five models (Ant H-JEPA 3, FourRoom H-JEPA 4, Push-T HWM 2, Cube LeWM, Cube H-JEPA 2) with a
 fixed seed and runs one `hjepa_forward` on a fixed random batch. Every loss term and parameter count
-must be identical to the reference. The reference was produced by this release code on
-2026-09-27. The prediction loss uses `F.mse_loss`, which autocast runs in fp32. The paper code
-computed it by hand in bf16, so the loss terms are not bit-identical to `lejepa_code`. If a change
+must be identical to the reference. The reference was regenerated on 2026-10-02 with the
+prediction loss in fp32 (`F.mse_loss` under bf16 autocast); the paper's `lejepa_code` computed it in
+bf16, so its prediction-loss terms differ from the reference by bf16 rounding. If a change
 is meant to alter training, say so and regenerate the reference only after the user agrees.
 
 Real training is not seeded before model construction (`spt.Manager` seeds afterwards), so two real

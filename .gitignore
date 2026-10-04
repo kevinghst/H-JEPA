@@ -20,8 +20,8 @@ h_jepa/logs/
 environment*.json
 requirements_frozen*.txt
 
-# per-user cluster settings for h_jepa/launch.py
-h_jepa/config/slurm/local.yaml
+# per-user cluster settings for h_jepa/scripts/slurm/launch.py
+h_jepa/scripts/slurm/local.yaml
 
 # kept locally, out of the release: the v2 DROID family (6-frame, stride 2) and its 3/4-level planners
 h_jepa/config/train/dev/

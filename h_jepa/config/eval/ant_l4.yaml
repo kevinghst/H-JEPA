@@ -1,11 +1,6 @@
 # Visual AntMaze: 4-level hierarchical planning, shared by H-JEPA and HWM.
 # Sample counts: best mean success rate under 100 TFLOPs/episode.
 cache_dir: ${oc.env:HJEPA_HOME}
-wandb:
-  enabled: false
-  entity: null
-  project: hjepa-eval
-  run_name: null
 world:
   env_name: swm/OGBAntMaze-v0
   num_envs: ${eval.num_eval}

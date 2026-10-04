@@ -2,7 +2,7 @@
 # Offline DROID planning evals behind fig:cls-ladder-droid: the release planner cell of
 # each model (the config defaults, README §5.3) on the 16 evaluation clips, with planner
 # seeds 1/2/3 for every trained model, then the mean Frechet fidelity per model. Checkpoints
-# come from `ENVS=droid train_all.sh` ($STABLEWM_HOME/ckpts/droid/droid_<model>/seed<seed>/).
+# come from `ENVS=droid train_all.sh` ($HJEPA_HOME/ckpts/droid/droid_<model>/seed<seed>/).
 # The eval config follows the model name (lewm*: droid_flat, *_l<N>*: droid_l<N>).
 # EPOCHS="50 100 150" evaluates droid_<model>_epoch_<N>_object.ckpt instead, into
 # eval_<plan>/epoch_<N>/, skipping missing checkpoints.
