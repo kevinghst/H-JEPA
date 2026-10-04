@@ -20,7 +20,7 @@ from runs import R, ROOT, rename_datasets
 
 CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "config" / "train")
 IGNORED = ("sweep", "env", "subdir", "output_model_name", "wandb", "planning_eval", "final_probing_decoding_eval",
-           "transition_budget", "train_batch_budget")
+           "transition_budget", "train_batch_budget", "save_every_n_epochs", "resume_every_n_steps")
 REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|debug\..*)$",
            r"level\d+\.predictor\.ensemble_size$", r"level\d+\.loss\.embed\.temp_straight\..*",
            r"level\d+\.wm\.type$", r"level\d+\.(encoder\.|encoder\.pixel_encoder\.encoder\.)resnet9$",
@@ -31,7 +31,7 @@ REMOVED = [r"level\d+\.(freeze|freeze_encoder|train|detach_lower_level_inputs|de
            r"(local_cache_dir|train_split)$", r"level\d+\.encoder\.residual$", r"level\d+\.action_encoder\.uniform_input$",
            r"level\d+\.wm\.(xy|qpos|qvel|observation|state|block_pos|block_ori|block_xy|agent_xy|agent_vel|effector_pos|"
            r"effector_yaw|gripper|arm_joint_pos|arm_joint_vel|gripper_vel|distractor0_xy|min_distractor_dist)_dim$",
-           r"level([2-9])\.wm\.action_dim$", r"level\d+\.wm\.proprio_dim$"]
+           r"level([2-9])\.wm\.action_dim$", r"level\d+\.wm\.proprio_dim$", r"max_train_batches_total$"]
 
 
 def rename_action_keys(cfg):

@@ -69,6 +69,7 @@ planning_eval:
   config_name: null
   output_subdir: planning_eval
   run_on_train_end: false
+  every_n_epochs: 0
 final_probing_decoding_eval:
   enabled: false
 level1:

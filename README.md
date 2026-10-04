@@ -66,7 +66,7 @@ h_jepa/
   droid_eval.py             offline DROID planning eval on the 16 evaluation clips (eval.py)
   droid_assets/             DROID normalization stats and evaluation-clip manifest
   scripts/                  eval-task generators and the train/eval helper scripts
-  scripts/slurm/            optional SLURM launcher for training sweeps and per-epoch evals (3.6)
+  scripts/slurm/            optional SLURM launcher for training sweeps and per-epoch evals (3.4)
   ARCHITECTURE.md           how training, the hierarchy and planning fit together
 ```
 
@@ -95,11 +95,93 @@ export HJEPA_HOME=/path/to/data   # datasets, expert policies and checkpoints li
 
 ## 3) Usage
 
-How to run each part of the pipeline. All commands run from `h_jepa/` unless noted.
+The general commands, for any environment. All commands run from `h_jepa/` unless noted. The datasets,
+evaluation tasks and exact runs behind the paper results are in §4 (Push-T, OGBench Cube, Visual
+AntMaze, FourRoom Distractors) and §5 (DROID).
 
-### 3.1) Datasets
+### 3.1) Training
 
-The simulation datasets are HDF5 files under `$HJEPA_HOME`; DROID is read from mp4 (§5.1).
+```bash
+python main_hjepa.py --config-name <env>_<model> seed=<seed>
+```
+
+A run writes to `$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
+stable-pretraining cache `spt/` included):
+
+- `<env>_<model>_object.ckpt`: the trained model;
+- `planning_eval/epoch_XXXX/metrics.yaml`: the planning eval run at the end of training with the
+  matching planner (`<env>_flat` for LeWM, `<env>_l<n>` for an n-level model), planner seed = model seed
+  (`planning_eval.every_n_epochs=N` also runs it every N epochs; off by default);
+- `final_probing_decoding_eval/`: probes and decoders trained on the frozen model
+  (`config/probing/<env>.yaml`).
+
+W&B logging is off by default (`wandb.enabled=true` to turn it on).
+
+### 3.2) Probing and decoding
+
+Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoint:
+
+```bash
+python main_probing_decoding_eval.py --config-name <env> \
+  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+```
+
+### 3.3) Planning evaluation
+
+To run a planner on a saved checkpoint:
+
+```bash
+python eval.py --config-name <env>_<planner> seed=<seed> output.dir=<dir> \
+  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
+```
+
+The eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
+Use `flat` for `lewm` and `l<n>` for `hjepa_l<n>` and `hwm_l<n>`. The `l<k>_project` planners run
+level-1 planning with the cost measured in the level-k latent (the upper levels are skipped; the planned
+level-1 states and the goal are encoded up to level k); they apply to any H-JEPA model with at least k
+levels, since planning levels above the model's depth are dropped.
+With `+eval.chunk_size=N` the tasks are evaluated N at a time and each chunk writes
+`chunks/tasks_<start>-<end>.json` to `output.dir`; a rerun skips the chunks already written, so a
+preempted (requeued) eval only redoes the chunk it was in. `metrics.yaml` keeps the same keys; each chunk
+reseeds the planner with the seed plus its first task index (a single chunk plans as the unchunked eval).
+With a DROID config, `eval.py` runs the open-loop DROID eval (§5.3).
+
+### 3.4) Running on SLURM (optional)
+
+`scripts/slurm/launch.py` submits training sweeps, resumes and per-epoch planning evals as SLURM jobs.
+Nothing else depends on it; the commands above run the same code directly. Set your cluster in
+`scripts/slurm/local.yaml` (gitignored), which overrides `scripts/slurm/default.yaml`:
+
+```yaml
+venv: /path/to/.venv     # its bin/python runs the jobs
+partition: gpu
+account: my_account
+qos: normal
+```
+
+```bash
+# one job per seed: $HJEPA_HOME/ckpts/cube/my_sweep_<timestamp>/cube_hjepa_l3/seed<seed>/
+python scripts/slurm/launch.py train --config-name cube_hjepa_l3 --sweep my_sweep --seeds 42,43,44
+# relaunch one run from lightning_resume/last.ckpt
+python scripts/slurm/launch.py resume <run_dir>
+# one eval.py job per saved epoch checkpoint: <run_dir>/eval_epoch/epoch_<N>/
+python scripts/slurm/launch.py eval <sweep_dir|run_dir> --epochs last
+```
+
+`--grid key=v1,v2` (repeatable) adds a grid over hydra overrides, `--dry` prints the `sbatch` lines without
+submitting. A sweep's jobs run from a copy of the repo taken at submission (`<sweep_dir>/code`), so later
+edits do not reach them. Wall-clock limits are `time` for training and `eval.time_by_env` for evals;
+`--time` overrides both.
+
+## 4) Reproducing Push-T, OGBench Cube, Visual AntMaze, FourRoom
+
+This covers the bottom row of the depth figure and the level-1 columns of the cost-ladder tables. The
+paper uses seeds 42, 43 and 44 for every model, with the planner seed equal to the model seed. Reference
+numbers are success rates (%, mean ± SE over the three seeds). Commands run from `h_jepa/` unless noted.
+
+### 4.1) Datasets
+
+The datasets are HDF5 files under `$HJEPA_HOME`.
 
 | Environment | Files | Source |
 |---|---|---|
@@ -107,7 +189,6 @@ The simulation datasets are HDF5 files under `$HJEPA_HOME`; DROID is read from m
 | OGBench Cube | `cube_single_expert_train.h5`, `cube_single_expert_val.h5` | download (LeWM) + split |
 | Visual AntMaze | `visual_antmaze_medium_{explore_stitch_train,stitch_val,probing_train,probing_eval}.h5` | download (HF) or generate |
 | FourRoom Distractors | `fourroom_tp35_d1{,_val,_probing,_probing_val}.h5` | download (HF) or generate |
-| DROID | `droid/droid_paths_minus16_256p.csv`, `droid/droid_val_indist_256p.csv`, the 256p mp4 episodes they list (`droid/droid_256p/`) and the 16 raw evaluation episodes (`droid/droid_raw/`) | download (HF `jepa-world-models/h-jepa`, §5.1) |
 
 **Push-T and Cube.** The training data is LeWM's release
 ([`quentinll/lewm-pusht`](https://huggingface.co/datasets/quentinll/lewm-pusht),
@@ -139,7 +220,7 @@ hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME
 cd $HJEPA_HOME && sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-or collect them (from the repository root):
+[OPTIONAL] or collect them (from the repository root):
 
 ```bash
 bash scripts/data/collect_datasets.sh
@@ -156,7 +237,7 @@ policies>`); put the ant expert in `$HJEPA_HOME/ogbench_experts/ant/` (`params_4
   the seed-42 paper models and keeps only the columns training reads; a collected file also has the
   collector's other columns. The probing eval file holds 155 `explore` + 155 `stitch` episodes.
 
-### 3.2) Generate evaluation tasks
+### 4.2) Evaluation tasks
 
 Each environment has a fixed set of 50 start/goal tasks under `h_jepa/assets/eval_trajs/`.
 Download them from [`jepa-world-models/h-jepa`](https://huggingface.co/datasets/jepa-world-models/h-jepa):
@@ -166,11 +247,11 @@ hf download jepa-world-models/h-jepa --repo-type dataset --local-dir assets --in
 cd assets/eval_trajs && sha256sum -c SHA256SUMS && cd -
 ```
 
-or regenerate them:
+[OPTIONAL] or regenerate them:
 
 ```bash
 # Visual AntMaze: start/goal cells 3 grid cells apart, reached by the expert policy
-# (needs the OGBench ant expert in $HJEPA_HOME/ogbench_experts/ant/, see 3.1)
+# (needs the OGBench ant expert in $HJEPA_HOME/ogbench_experts/ant/, see 4.1)
 python scripts/generate_maze_expert_grid_eval_tasks.py --config-name ant_flat \
   --output-path assets/eval_trajs/ant/expert_grid_d3_n50.pt \
   --d-low 3 --d-high 3 --num-episodes 50 --rollout-budget 125 --seed 42
@@ -183,98 +264,20 @@ python scripts/generate_fourroom_eval_tasks.py \
   --cross-n-rooms 2 --max-steps 75 --num-episodes 50
 
 # OGBench Cube: 20-step windows centred on the grasp, from the val split
-# (needs cube_single_expert_val.h5, see 3.1)
+# (needs cube_single_expert_val.h5, see 4.1)
 python scripts/generate_dataset_eval_trajs.py --config-name cube_flat \
   --dataset-name cube_single_expert_val --traj-sampling-mode cube_pickup_centered \
   --goal-offset-steps 20 --eval-budget 50 --seed 42 \
   --output-path assets/eval_trajs/ogbench/goal_offset_20_pickup_val.pt
 
 # Push-T: 75-step windows from the val split, stratified over episodes
-# (needs pusht_expert_val.h5, see 3.1)
+# (needs pusht_expert_val.h5, see 4.1)
 python eval.py --config-name pusht_flat policy=random load_eval_trajs_path=null \
   eval.goal_offset_steps=75 eval.dataset_name=pusht_expert_val seed=42 \
   dump_eval_trajs_path=assets/eval_trajs/pusht/goal_offset_75_val.pt
 ```
 
-### 3.3) Training
-
-```bash
-python main_hjepa.py --config-name <env>_<model> seed=<seed>
-```
-
-A run writes to `$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/` (`config.yaml`, logs and the
-stable-pretraining cache `spt/` included):
-
-- `<env>_<model>_object.ckpt`: the trained model;
-- `planning_eval/epoch_XXXX/metrics.yaml`: the planning eval run at the end of training with the
-  matching planner (`<env>_flat` for LeWM, `<env>_l<n>` for an n-level model), planner seed = model seed;
-- `final_probing_decoding_eval/`: probes and decoders trained on the frozen model
-  (`config/probing/<env>.yaml`).
-
-W&B logging is off by default (`wandb.enabled=true` to turn it on).
-
-### 3.4) Probing and decoding
-
-Training ends with `final_probing_decoding_eval`. To run it on a saved checkpoint:
-
-```bash
-python main_probing_decoding_eval.py --config-name <env> \
-  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
-```
-
-### 3.5) Planning evaluation
-
-To run a planner on a saved checkpoint:
-
-```bash
-python eval.py --config-name <env>_<planner> seed=<seed> output.dir=<dir> \
-  policy=$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/<env>_<model>_object.ckpt
-```
-
-The eval writes `metrics.yaml` (`success_rate`) to `output.dir`, relative to the checkpoint's directory.
-Use `flat` for `lewm` and `l<n>` for `hjepa_l<n>` and `hwm_l<n>`. The `l<k>_project` planners run
-level-1 planning with the cost measured in the level-k latent (the upper levels are skipped; the planned
-level-1 states and the goal are encoded up to level k); they apply to any H-JEPA model with at least k
-levels, since planning levels above the model's depth are dropped.
-With `+eval.chunk_size=N` the tasks are evaluated N at a time and each chunk writes
-`chunks/tasks_<start>-<end>.json` to `output.dir`; a rerun skips the chunks already written, so a
-preempted (requeued) eval only redoes the chunk it was in. `metrics.yaml` keeps the same keys; each chunk
-reseeds the planner with the seed plus its first task index (a single chunk plans as the unchunked eval).
-
-### 3.6) Running on SLURM (optional)
-
-`scripts/slurm/launch.py` submits training sweeps, resumes and per-epoch planning evals as SLURM jobs.
-Nothing else depends on it; the commands above run the same code directly. Set your cluster in
-`scripts/slurm/local.yaml` (gitignored), which overrides `scripts/slurm/default.yaml`:
-
-```yaml
-venv: /path/to/.venv     # its bin/python runs the jobs
-partition: gpu
-account: my_account
-qos: normal
-```
-
-```bash
-# one job per seed: $HJEPA_HOME/ckpts/cube/my_sweep_<timestamp>/cube_hjepa_l3/seed<seed>/
-python scripts/slurm/launch.py train --config-name cube_hjepa_l3 --sweep my_sweep --seeds 42,43,44
-# relaunch one run from lightning_resume/last.ckpt
-python scripts/slurm/launch.py resume <run_dir>
-# one eval.py job per saved epoch checkpoint: <run_dir>/eval_epoch/epoch_<N>/
-python scripts/slurm/launch.py eval <sweep_dir|run_dir> --epochs last
-```
-
-`--grid key=v1,v2` (repeatable) adds a grid over hydra overrides, `--dry` prints the `sbatch` lines without
-submitting. A sweep's jobs run from a copy of the repo taken at submission (`<sweep_dir>/code`), so later
-edits do not reach them. Wall-clock limits are `time` for training and `eval.time_by_env` for evals;
-`--time` overrides both.
-
-## 4) Reproducing Fourroom, Visual AntMaze, OGBench Cube, Push-T
-
-This covers the bottom row of the depth figure and the level-1 columns of the cost-ladder tables. The
-paper uses seeds 42, 43 and 44 for every model, with the planner seed equal to the model seed. Reference
-numbers are success rates (%, mean ± SE over the three seeds).
-
-### 4.1) Training
+### 4.3) Training
 
 Train all 4 environments × 7 models × 3 seeds (84 runs):
 
@@ -284,9 +287,9 @@ scripts/train_all.sh
 
 The runs are sequential; restrict them with `ENVS`, `MODELS` and `SEEDS` (e.g.
 `ENVS=cube MODELS="lewm hjepa_l3" SEEDS=42 scripts/train_all.sh`), or on a cluster submit each
-`main_hjepa.py` command as its own job.
+`main_hjepa.py` command as its own job. Each run writes the outputs listed in §3.1.
 
-### 4.2) Depth figure
+### 4.4) Depth figure
 
 Each training run ends with the planning eval behind the depth figure (flat planning
 for LeWM, n-level planning for H-JEPA and HWM with n levels), so the numbers come out as a byproduct of
@@ -316,7 +319,7 @@ sample counts per level. Cube's 3- and 4-level planners keep the levels above 2 
 levels are skipped (2-level planning of a deeper model). No four-level compute sweep was run on Push-T,
 so `pusht_l4` keeps the original planner setting.
 
-### 4.3) Cost ladder
+### 4.5) Cost ladder
 
 Evaluate every H-JEPA model with the flat level-1 planner (the native column) and
 with the cost measured in each upper level's latent (`l2_project` … `l<n>_project` for an n-level model):
@@ -401,7 +404,7 @@ ENVS=droid scripts/train_all.sh
 An epoch is 292 steps. Each run takes one process per GPU: the script launches
 `srun --ntasks-per-node=2 python main_hjepa.py --config-name droid_<model> seed=<seed>`,
 so run it inside a SLURM allocation with 2 GPUs and 2 tasks per node, or submit each command as its
-own job. `MODELS` and `SEEDS` restrict it as in §4.1. A run writes:
+own job. `MODELS` and `SEEDS` restrict it as in §4.3. A run writes:
 
 ```
 $HJEPA_HOME/ckpts/droid/

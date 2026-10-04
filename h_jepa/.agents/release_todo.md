@@ -218,10 +218,11 @@ Round 4
   config key `residual`); `SequenceEncoder` `stochastic` / `use_cls` / `step_mlp` / `uniform_input`
   (+ config key) / `action_masks` / truncation; `models/encoders/vit.py` (custom size configs;
   `create_hf_vit` is called directly, without `pretrained`), the `models.encoders` re-exports;
-  `MixedHDF5Dataset.source_names`; `print_parameter_counts`; `PlanningEvalCallback` periodic /
-  on-train-start evals, `config_path`, multi-seed aggregation and `_se` keys (the end-of-training
+  `MixedHDF5Dataset.source_names`; `print_parameter_counts`; `PlanningEvalCallback`
+  on-train-start evals (periodic evals were re-added on 2026-10-02 as `planning_eval.every_n_epochs`,
+  default 0), `config_path`, multi-seed aggregation and `_se` keys (the end-of-training
   `metrics.yaml` now has the same schema as `eval.py`'s; planner seed = `cfg.seed`; config keys
-  `planning_eval.{every_n_epochs,run_on_train_start,seeds}`)
+  `planning_eval.{run_on_train_start,seeds}`)
 - probing: W&B decoder image logging (the `decodings/` PNGs stay) and the `visualization` options
   (always 32 uniformly spaced clips of the first eval set); `_add_distractor_aggregate`; probe
   `architectures`, per-level `decoder.config` / `decoder.enabled` (`levelN.train_decoder` stays),
@@ -300,6 +301,13 @@ Round 7 (2026-10-01)
   heads on the frozen model), unaffected. fwd_test bit-identical, verify_train output unchanged, Cube smoke run ok.
   Old `lightning_resume/last.ckpt` files still hold the probe modules (`callbacks_modules`); weights / object
   checkpoints are unaffected.
+
+Round 8 (2026-10-02)
+- `max_train_batches_total` (`TrainBatchLimitCallback`). It was set only by Ant/Cube/Push-T LeWM (498912 /
+  191722 / 206982 batches, `max_epochs: 50`). LeWM `max_epochs` is now Ant 7 (the cap rounded up to whole
+  epochs) and Cube / FourRoom / Push-T 10 (FourRoom was 11). Not numerics-neutral: different batch counts, and
+  the cosine LR schedule (sized from `max_epochs`) now decays fully instead of stopping at ~12% / ~27% / ~26% of
+  a 50-epoch cosine. The four LeWM configs no longer reproduce the paper's LeWM runs exactly.
 
 DROID (not ported from the original code)
 - decoded-plans figure (needs the visual decoder); anticollapse 16-cell grid; crossval grids;

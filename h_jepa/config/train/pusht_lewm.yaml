@@ -5,7 +5,6 @@ defaults:
 output_model_name: pusht_lewm
 num_levels: 1
 trainer:
-  max_epochs: 50
-max_train_batches_total: 206982
+  max_epochs: 10
 planning_eval:
   config_name: pusht_flat
