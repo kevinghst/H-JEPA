@@ -452,10 +452,10 @@ def run_planning_eval(
     else:
         process = _build_eval_process_from_policy_normalizer(cfg, model=model)
 
-    chunk_size = cfg.eval.get("chunk_size", None)  # +eval.chunk_size=N: resumable per chunk of N tasks
-    if chunk_size:
-        if dump_eval_only or not load_eval_trajs_path:
-            raise ValueError("eval.chunk_size needs load_eval_trajs_path and no dump_eval_trajs_path")
+    chunk_size = cfg.eval.get("chunk_size", 1)  # resumable per chunk of N tasks; null: one World of all tasks
+    if chunk_size and not dump_eval_only:
+        if not load_eval_trajs_path:
+            raise ValueError("eval.chunk_size needs load_eval_trajs_path (+eval.chunk_size=null to run unchunked)")
         return _run_chunked_eval(
             cfg, int(chunk_size), world_cfg, image_shape, load_eval_trajs_path,
             process, transform, model, resolved_results_dir,
