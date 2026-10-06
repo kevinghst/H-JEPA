@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline DROID planning evals behind fig:cls-ladder-droid: the release planner cell of
+# Offline DROID planning evals behind Figure 9(b): the release planner cell of
 # each model (the config defaults, README §5.4) on the 16 evaluation clips, with planner
 # seeds 1/2/3 for every trained model, then the mean Frechet fidelity per model. Checkpoints
 # come from `ENVS=droid train_all.sh` ($HJEPA_HOME/ckpts/droid/droid_<model>/seed<seed>/).

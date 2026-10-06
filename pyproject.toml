@@ -1,6 +1,6 @@
 [project]
 name = "h-jepa"
-version = "0.0.5"
+version = "1.0.0"
 description = "Hierarchical JEPA world models"
 readme="README.md"
 license="MIT"

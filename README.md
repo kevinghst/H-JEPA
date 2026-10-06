@@ -458,6 +458,17 @@ For the compute ladder, sweep only sample counts (per level for hierarchical mod
 Mean ± SE over train seeds, each averaged over planner seeds, with the planner cells above
 (10–15 TFLOPs/episode). The LeWM bar without IDM in Figure 9(b) is the zero-action floor.
 
-## 6) License
+## 6) Citation
+
+```bibtex
+@article{zhang2026hjepa,
+  title   = {{H-JEPA}: End-to-End Learning of Hierarchical World Models for Visual Planning},
+  author  = {Zhang, Wancong and Terver, Basile and Rabbat, Mike and LeCun, Yann and Balestriero, Randall},
+  journal = {arXiv preprint arXiv:2610.06805},
+  year    = {2026}
+}
+```
+
+## 7) License
 
 MIT (see `LICENSE`).
