@@ -70,8 +70,8 @@ Simulation configs use `<env>` = `ant`, `fourroom`, `cube` or `pusht`:
 
 ```bash
 git clone https://github.com/kevinghst/H-JEPA.git && cd H-JEPA
-conda create -n hjepa python=3.10 && conda activate hjepa
-pip install -e ".[train,env]"
+conda create -n hjepa python=3.11.13 && conda activate hjepa
+pip install -e ".[train,env]" --extra-index-url https://download.pytorch.org/whl/cu128
 export HJEPA_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
 ```
 

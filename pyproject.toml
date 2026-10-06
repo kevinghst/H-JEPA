@@ -17,14 +17,15 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-  "torch==2.12.0",
-  "torchvision==0.27.0",
+  "torch==2.7.1",
+  "torchvision==0.22.1",
+  "torchaudio==2.7.1",
   "numpy",
   "loguru",
   "tabulate",
-  "gymnasium",
+  "gymnasium==1.2.3",
   "einops",
   "h5py",
   "scipy",
@@ -51,12 +52,12 @@ train = [
 ]
 
 env = [
-    "mujoco==3.8.1",  # the paper evals' version; newer mujoco changes Cube episode outcomes
-    "dm_control==1.0.41",  # newer releases require newer mujoco
+    "mujoco==3.14.0",  # mujoco versions change episode outcomes (Cube, AntMaze)
+    "dm_control==1.0.47",
     "pygame",
     "pymunk",
     "shapely",
-    "ogbench",
+    "ogbench==1.2.1",
     "minigrid",
     "opencv-python",
     "stable_baselines3",
