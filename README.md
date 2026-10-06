@@ -75,11 +75,18 @@ pip install -e ".[train,env]"
 export HJEPA_HOME=/path/to/data   # datasets, expert policies and checkpoints live here
 ```
 
+**Choose your workflow:**
+
+- **Evaluate pretrained models:** download [evaluation tasks](#42-evaluation-tasks) and
+  [checkpoints](#44-pretrained-checkpoints), then run the [depth comparison](#45-depth-comparison-figure-6)
+  or [cost ladder](#46-cost-ladder-tables-1-and-9).
+- **Train from scratch:** prepare [datasets](#41-datasets) and [evaluation tasks](#42-evaluation-tasks),
+  then [train](#43-training).
+- **DROID:** follow the separate [data, training and evaluation instructions](#5-reproducing-droid).
+
 ## 3) Usage
 
 Run commands from `h_jepa/` unless noted (`cd h_jepa` after installation).
-For downloads and full experiments, see [simulation](#4-reproducing-push-t-ogbench-cube-visual-antmaze-fourroom)
-and [DROID](#5-reproducing-droid).
 
 ### 3.1) Training
 
