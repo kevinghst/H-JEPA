@@ -1,0 +1,63 @@
+policy: null
+output_subdir: final_probing_decoding_eval
+seed: 42
+device: auto
+cache_dir: ${oc.env:HJEPA_HOME}
+epochs: 60
+loader:
+  batch_size: 128
+  num_workers: 6
+  drop_last: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pin_memory: true
+  shuffle: true
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0001
+decoder:
+  depth: 4
+  dim: 256
+  heads: 8
+wandb:
+  enabled: false
+  config:
+    entity: null
+    project: hjepa-probing
+    name: null
+    id: null
+    resume: allow
+train_dataset:
+  name: fourroom_tp35_d1_probing
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  keys_to_cache:
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  level1:
+    frameskip: 1
+    num_steps: 1
+  total_transitions: 160000
+eval_dataset:
+  name: fourroom_tp35_d1_probing_val
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  keys_to_cache:
+  - action
+  - xy
+  - distractor0_xy
+  - min_distractor_dist
+  level1:
+    frameskip: 1
+    num_steps: 1
+  total_transitions: 40000

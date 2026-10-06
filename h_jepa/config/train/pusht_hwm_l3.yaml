@@ -1,0 +1,109 @@
+# Push-T: HWM baseline with 3 levels, trained end-to-end. Same as H-JEPA except the
+# upper levels have identity encoders and no SIGReg.
+defaults:
+- base/pusht
+- _self_
+output_model_name: pusht_hwm_l3
+num_levels: 3
+data:
+  dataset:
+    level2:
+      frameskip: ${level2.stride}
+      window_size: ${level2.window_size}
+      num_steps: ${eval:'${level2.wm.history_size} + ${level2.wm.rollout_n}'}
+    level3:
+      frameskip: ${level3.stride}
+      window_size: ${level3.window_size}
+      num_steps: ${eval:'${level3.wm.history_size} + ${level3.wm.rollout_n}'}
+planning_eval:
+  config_name: pusht_l3
+final_probing_decoding_eval:
+  overrides:
+    level1:
+      train_decoder: true
+      probes:
+        enabled: true
+    level2:
+      train_decoder: true
+      probes:
+        enabled: true
+    level3:
+      train_decoder: true
+      probes:
+        enabled: true
+level2:
+  lr: 1.0e-05
+  stride: 2
+  window_size: 1
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: ${level1.wm.embed_dim}
+    use_proprio: false
+  encoder:
+    type: identity
+    input_dim: ${level1.wm.embed_dim}
+    projector:
+      type: identity
+  action_encoder:
+    output_dim: 4
+    input_dim: ${level1.wm.embed_dim}
+    max_chunk: ${eval:'${data.dataset.level2.frameskip} + 1'}
+    queue_size: 4000
+  action_embed:
+    patch_embed: false
+    input_dim: ${level2.action_encoder.output_dim}
+  predictor:
+    depth: 6
+    heads: 16
+    mlp_dim: 2048
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: false
+        weight: 0.09
+level3:
+  lr: 1.0e-05
+  stride: 2
+  window_size: 1
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: ${level1.wm.embed_dim}
+    use_proprio: false
+  encoder:
+    type: identity
+    input_dim: ${level2.wm.embed_dim}
+    projector:
+      type: identity
+  action_encoder:
+    output_dim: 4
+    input_dim: ${level2.wm.embed_dim}
+    max_chunk: ${eval:'${data.dataset.level3.frameskip} + 1'}
+    queue_size: 4000
+  action_embed:
+    patch_embed: false
+    input_dim: ${level3.action_encoder.output_dim}
+  predictor:
+    depth: 6
+    heads: 16
+    mlp_dim: 2048
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: false
+        weight: 0.09

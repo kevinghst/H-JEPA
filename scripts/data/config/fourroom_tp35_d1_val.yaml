@@ -1,0 +1,65 @@
+cache_dir: null
+dataset_name: fourroom_tp35_d1_val
+world:
+  env_name: swm/FourRoomDistractors-v0
+  num_envs: 10
+  max_episode_steps: 400
+  image_shape:
+  - 224
+  - 224
+  target_min_steps: null
+  agent_speed: 2.5
+  agent_radius: 3.5
+  wall_thickness: 10
+  door_size:
+  - 16
+  - 16
+  - 16
+  - 16
+  door_positions:
+    top: 56
+    bottom: 168
+    left: 56
+    right: 168
+  close_door_prob: 0.5
+  min_distractors: 1
+  max_distractors: 1
+  distractor_speed: 2.5
+  distractor_policy: explore
+  distractor_action_noise: 0.0
+  distractor_explore:
+    speed_noise_std: 0.0
+    turn_autocorr: 0.0
+    turn_noise_std: 0.0
+    target_heading_gain: 0.0
+    switch_tau: null
+    switch_mode: periodic
+    teleport_tau: 35
+    teleport_mode: poisson
+    initial_turn_rate_std: 0.0
+ego_policy:
+  mixture:
+  - name: expert
+    proportion: 0.5
+    params:
+      action_noise: 1.0
+      action_repeat_prob: 0.05
+  - name: explore
+    proportion: 0.5
+    params:
+      speed_mean: 0.75
+      speed_noise_std: 0.005
+      turn_autocorr: 0.995
+      turn_noise_std: 0.002
+      target_heading_gain: 0.015
+      switch_tau: 50
+      initial_turn_rate_std: 0.0
+      max_turn_rate: 0.08
+num_workers: 4
+seed: 3072
+num_traj: null
+num_transitions: 60000
+collection:
+  fixed_length_episodes: true
+  retarget_on_goal: true
+options: null

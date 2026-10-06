@@ -1,0 +1,10 @@
+# OGBench Cube: flat LeWM baseline (a single level).
+defaults:
+- base/cube
+- _self_
+output_model_name: cube_lewm
+num_levels: 1
+trainer:
+  max_epochs: 10
+planning_eval:
+  config_name: cube_flat

@@ -1,0 +1,38 @@
+# The released file was built from the seed-42 episode selection of the paper's 50/50 mix of
+# visual_antmaze_medium_explore_train (seed 3072, all 12,500 episodes) and
+# visual_antmaze_medium_stitch_train_2_5x (12,500 of 31,250 episodes; collection seed unknown,
+# 1072 is a placeholder). This config collects an equivalent dataset, not an identical one.
+cache_dir: null
+dataset_type: mixed
+output_dataset_name: visual_antmaze_medium_explore_stitch_train
+world:
+  num_envs: 10
+  image_shape:
+  - 64
+  - 64
+  maze_type: medium
+  ob_type: pixels
+  width: 64
+  height: 64
+  camera_name: back
+policy:
+  restore_path: ${oc.env:HJEPA_HOME}/ogbench_experts/ant
+  restore_epoch: 400000
+  sample_every: 10
+  noise: null
+  seed: 0
+seed: 3072
+mixtures:
+- dataset_type: explore
+  num_traj: 12500
+  seed: 3072
+  world:
+    max_episode_steps: 401
+  policy: {}
+- dataset_type: stitch
+  num_traj: 12500
+  seed: 1072
+  world:
+    max_episode_steps: 401
+  policy: {}
+options: null

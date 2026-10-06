@@ -1,0 +1,15 @@
+# FourRoom Distractors: flat LeWM baseline (a single level).
+defaults:
+- base/fourroom
+- _self_
+output_model_name: fourroom_lewm
+num_levels: 1
+trainer:
+  max_epochs: 10
+level1:
+  loss:
+    embed:
+      sigreg:
+        weight: 0.72
+planning_eval:
+  config_name: fourroom_flat

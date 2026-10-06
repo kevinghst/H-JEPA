@@ -1,0 +1,75 @@
+policy: null
+output_subdir: final_probing_decoding_eval
+seed: 42
+device: auto
+cache_dir: ${oc.env:HJEPA_HOME}
+epochs: 25
+loader:
+  batch_size: 128
+  num_workers: 6
+  drop_last: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pin_memory: true
+  shuffle: true
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0001
+decoder:
+  depth: 4
+  dim: 256
+  heads: 8
+wandb:
+  enabled: false
+  config:
+    entity: null
+    project: hjepa-probing
+    name: null
+    id: null
+    resume: allow
+train_dataset:
+  name: visual_antmaze_medium_probing_train
+  total_transitions: 500000
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - qpos
+  - qvel
+  - proprio
+  keys_to_cache:
+  - action
+  - xy
+  - qpos
+  - qvel
+  keys_to_merge:
+    proprio:
+    - key: qpos
+      start: 2
+    - qvel
+  level1:
+    frameskip: 1
+    num_steps: 1
+eval_dataset:
+  name: visual_antmaze_medium_probing_eval
+  total_transitions: 50000
+  keys_to_load:
+  - pixels
+  - action
+  - xy
+  - qpos
+  - qvel
+  - proprio
+  keys_to_cache:
+  - action
+  - xy
+  - qpos
+  - qvel
+  keys_to_merge:
+    proprio:
+    - key: qpos
+      start: 2
+    - qvel
+  level1:
+    frameskip: 1
+    num_steps: 1

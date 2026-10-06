@@ -1,0 +1,36 @@
+# The released file is the concatenation of two separately collected sets (explore with seed 5072,
+# then stitch with seed 5073). This config collects both into one file: equivalent, not identical.
+cache_dir: null
+dataset_type: mixed
+output_dataset_name: visual_antmaze_medium_probing_eval
+world:
+  num_envs: 10
+  image_shape:
+  - 64
+  - 64
+  maze_type: medium
+  ob_type: pixels
+  width: 64
+  height: 64
+  camera_name: back
+policy:
+  restore_path: ${oc.env:HJEPA_HOME}/ogbench_experts/ant
+  restore_epoch: 400000
+  sample_every: 10
+  noise: null
+  seed: 0
+seed: 5072
+mixtures:
+- dataset_type: explore
+  num_traj: 155
+  seed: 5072
+  world:
+    max_episode_steps: 401
+  policy: {}
+- dataset_type: stitch
+  num_traj: 155
+  seed: 5073
+  world:
+    max_episode_steps: 401
+  policy: {}
+options: null

@@ -1,0 +1,124 @@
+# @package _global_
+# Push-T: settings shared by all seven models.
+data:
+  dataset:
+    name: pusht_expert_train
+    val_name: pusht_expert_val
+    keys_to_load:
+    - pixels
+    - action
+    - proprio
+    - state
+    - block_ori
+    - agent_xy
+    - block_xy
+    - agent_vel
+    keys_to_cache:
+    - action
+    - proprio
+    - state
+    keys_to_merge:
+      block_ori:
+        key: block_ori
+      agent_xy:
+        key: state
+        start: 0
+        end: 2
+      block_xy:
+        key: state
+        start: 2
+        end: 4
+      agent_vel:
+        key: state
+        start: 5
+        end: 7
+    level1:
+      frameskip: 5
+      num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
+quick_debug: false
+output_model_name: model
+env: pusht
+subdir: ${env}/${output_model_name}/seed${seed}
+hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
+  run:
+    dir: ${oc.env:HJEPA_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
+num_workers: 12
+seed: 42
+img_size: 224
+patch_size: 14
+encoder_scale: tiny
+dump_object: true
+save_every_n_epochs: 1
+resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
+trainer:
+  max_epochs: 9
+  devices: auto
+  accelerator: gpu
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  num_sanity_val_steps: 1
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  drop_last: true
+  persistent_workers: true
+  prefetch_factor: 8
+  pin_memory: true
+  shuffle: true
+optimizer:
+  type: AdamW
+  lr: 5.0e-05
+  weight_decay: 0.001
+wandb:
+  enabled: false
+  config:
+    entity: null
+    project: hjepa
+    name: null
+    id: null
+    resume: allow
+    log_model: false
+planning_eval:
+  enabled: true
+  config_name: ???
+  output_subdir: planning_eval
+  run_on_train_end: true
+  every_n_epochs: 0  # also run the planning eval every N epochs (0 = end of training only)
+final_probing_decoding_eval:
+  enabled: true
+  config_name: pusht
+  output_subdir: final_probing_decoding_eval
+  overrides:
+    level1:
+      train_decoder: true
+      probes:
+        enabled: true
+level1:
+  lr: 5.0e-05
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: 192
+    use_proprio: false
+    action_dim: 2
+  encoder:
+    type: vit
+    scale: ${encoder_scale}
+    projector:
+      type: mlp
+  predictor:
+    depth: 4
+    heads: 8
+    mlp_dim: 1024
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.09

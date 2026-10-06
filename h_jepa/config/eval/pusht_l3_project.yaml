@@ -1,0 +1,127 @@
+# Push-T: level-1 planning with the cost measured in the level-3 latent
+# (cost-ladder tables). Levels 2-4 have horizon 1, so their solves are skipped;
+# horizon_one_goal_cost_space=upper on levels 2..3 chains the projection up to level 3.
+# Levels above the model's depth are dropped, so this config serves 2/3/4-level models.
+cache_dir: ${oc.env:HJEPA_HOME}
+world:
+  env_name: swm/PushT-v1
+  num_envs: ${eval.num_eval}
+  max_episode_steps: ???
+  history_size: 1
+  frame_skip: 1
+dataset:
+  stats: pusht_expert_train
+  keys_to_cache:
+  - action
+  - proprio
+  - state
+  level1:
+    frameskip: 1
+    num_steps: 1
+seed: 42
+policy: null
+dump_eval_trajs_path: null
+load_eval_trajs_path: assets/eval_trajs/pusht/goal_offset_75_val.pt
+solver:
+  _target_: hierarchical_solver.HierarchicalSolver
+  solvers:
+    level1:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 800
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.05
+    level2:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+    level3:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+    level4:
+      _target_: stable_worldmodel.solver.GradientSolver
+      n_steps: 90
+      batch_size: 1
+      var_scale: 1.0
+      num_samples: 200
+      action_noise: 0
+      device: cuda
+      seed: ${seed}
+      optimizer_cls:
+        _target_: hydra.utils.get_class
+        path: torch.optim.AdamW
+      optimizer_kwargs:
+        lr: 0.1
+hierarchical_plan_config:
+  receding_horizon: 2
+  level1:
+    horizon: 15
+    action_block: 5
+    cost_last_n: 2
+  level2:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: upper
+  level3:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: upper
+  level4:
+    horizon: 1
+    action_block: 1
+    action_dim: 4
+    num_subgoals: 1
+    cost_last_n: 1
+    horizon_one_goal_cost_space: lower
+eval:
+  num_eval: 50
+  goal_offset_steps: 75
+  eval_budget: 90
+  img_size: 224
+  dataset_name: pusht_expert_train
+  callables:
+  - method: _set_state
+    args:
+      state:
+        value: state
+  - method: _set_goal_state
+    args:
+      goal_state:
+        value: goal_state
+output:
+  dir: null

@@ -1,0 +1,129 @@
+# @package _global_
+# Visual AntMaze: settings shared by all seven models.
+data:
+  dataset:
+    name: visual_antmaze_medium_explore_stitch_train
+    subset_seed: ${seed}
+    val_name: visual_antmaze_medium_stitch_val
+    val_total_transitions: 201000
+    keys_to_load:
+    - pixels
+    - action
+    - xy
+    - qpos
+    - qvel
+    - proprio
+    keys_to_cache:
+    - action
+    - xy
+    - qpos
+    - qvel
+    keys_to_merge:
+      proprio:
+      - key: qpos
+        start: 2
+      - qvel
+    level1:
+      frameskip: 5
+      num_steps: ${eval:'${level1.wm.history_size} + ${level1.wm.rollout_n}'}
+output_model_name: model
+env: ant
+subdir: ${env}/${output_model_name}/seed${seed}
+hydra:  # Hydra logs inside the run dir (main_hjepa.py run_dir), not in the launch dir
+  run:
+    dir: ${oc.env:HJEPA_HOME,${oc.env:HOME}/.stable_worldmodel}/ckpts/${subdir}/hydra
+quick_debug: false
+num_workers: 6
+seed: 42
+img_size: 64
+patch_size: 4
+encoder_scale: tiny
+dump_object: true
+save_every_n_epochs: 1
+resume_every_n_steps: 2000  # full-state resume checkpoint (0 = off), see utils.ResumeCheckpoint
+trainer:
+  max_epochs: 5
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+  num_sanity_val_steps: 1
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  drop_last: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pin_memory: true
+  shuffle: true
+optimizer:
+  type: AdamW
+  lr: 5.0e-05
+  weight_decay: 0.001
+wandb:
+  enabled: false
+  config:
+    entity: null
+    project: hjepa
+    name: null
+    id: null
+    resume: allow
+    log_model: false
+planning_eval:
+  enabled: true
+  config_name: ???
+  output_subdir: planning_eval
+  run_on_train_end: true
+  every_n_epochs: 0  # also run the planning eval every N epochs (0 = end of training only)
+final_probing_decoding_eval:
+  enabled: true
+  config_name: ant
+  output_subdir: final_probing_decoding_eval
+  overrides:
+    level1:
+      train_decoder: true
+      probes:
+        enabled: true
+level1:
+  lr: 5.0e-05
+  wm:
+    history_size: 3
+    rollout_n: 1
+    rollout_loss_weight: 1.0
+    embed_dim: 384
+    use_proprio: true
+    proprio_emb_dim: 128
+    action_dim: 8
+    proprio_dim: 27
+  encoder:
+    projector:
+      type: identity
+    pixel_encoder:
+      encoder:
+        type: vit
+        scale: tiny
+      projector:
+        type: mlp
+        output_dim: 256
+    proprio_encoder:
+      encoder:
+        type: mlp
+        hidden_dim: 256
+        output_dim: ${level1.wm.proprio_emb_dim}
+      projector:
+        type: identity
+  predictor:
+    depth: 4
+    heads: 8
+    mlp_dim: 1024
+    dim_head: 64
+    dropout: 0.1
+    emb_dropout: 0.0
+    hidden_dim: 192
+    projector:
+      type: mlp
+  loss:
+    embed:
+      sigreg:
+        enabled: true
+        weight: 0.09
