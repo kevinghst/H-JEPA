@@ -78,6 +78,19 @@ The README tables come from the paper-figure data in the development repo
 - cost ladder: `codex/converged_results/<env>/9-16-cost-ladder-depth-tasks/{2,3,4}levels/canonical_metrics.csv`
   (git-ignored in the development repo, on disk only).
 
+## Pretrained checkpoints (README §4.4)
+
+HF model repo `jepa-world-models/h-jepa`, seeds 42/43/44 (84 checkpoints), at
+`<env>/<env>_<model>/seed<N>/{<env>_<model>_object.ckpt, normalizer.pt}` (commits 417fb25, 9942fa9, 7b8ba64; local copy
+`/mnt/vast/home/kevin/hjepa_release_ckpts`, SHA-256 identical to HF). The README does not say where they come from:
+- Visual AntMaze LeWM and H-JEPA 2/3/4: trained with this repo (commit 5428773) by a collaborator,
+  `/mnt/vast/yilun/data/jepa_hier/ckpts/ant/ant_{lewm,jepa2,jepa3,jepa4}/seed<N>`, copied as-is (configs equal the
+  release configs). End-of-training planning success, seeds 42/43/44: LeWM 16/18/22, H-JEPA 2 40/40/44, H-JEPA 3
+  66/74/76, H-JEPA 4 62/74/70.
+- Everything else: the paper checkpoints of the training-config table above, loaded with this repo and re-saved so the
+  `JEPA.__setstate__` renames are stored in the file (state dicts identical). Their success with the release planners
+  (`stable_wm` env, 50 tasks, 2026-10-05 pass) is in `/mnt/vast/home/kevin/hjepa_paper_ckpt_evals/`.
+
 ## Data
 
 - Release dataset names = paper names without `_2_5x` (AntMaze `stitch_val`, `probing_train`) and

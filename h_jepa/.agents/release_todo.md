@@ -64,6 +64,23 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
 
 ## Pending work
 
+- 2026-10-06 checkpoints on HF model repo `jepa-world-models/h-jepa` (public, commit 417fb25): seed-42 paper
+  checkpoints of LeWM and H-JEPA 2/3/4 for FourRoom, Cube, Push-T, in the release layout
+  `<env>/<env>_<model>/seed42/{<env>_<model>_object.ckpt, normalizer.pt}`. Re-saved with the release code so the
+  `JEPA.__setstate__` renames are baked in (state dicts identical; Cube l3/flat 3-episode evals match the reference with
+  the shim disabled). Staging copy: `/mnt/vast/home/kevin/hjepa_release_ckpts`. Commit 9942fa9 added HWM 2/3/4 for all
+  four envs (paper checkpoints, re-saved) and Ant LeWM / H-JEPA 2/3/4 trained with this repo (commit 5428773) by a
+  collaborator (`/mnt/vast/yilun/data/jepa_hier/ckpts/ant/ant_{lewm,jepa2,jepa3,jepa4}/seed42`, copied as-is): 28 in
+  total; commit 7b8ba64 added seeds 43/44 the same way (84 checkpoints, 9.1 GB, SHA-256 checked against HF). Smoke test: HF download of `cube_hwm_l3` into an empty HJEPA_HOME + 1-episode `cube_l3` eval in the `hjepa`
+  env ran (success). README §4.4 documents the download. Still to do: model card.
+  The shim can go once no un-re-saved dev checkpoint is needed (release-check §3 and `runs.py` load the original paper
+  checkpoints).
+- 2026-10-06 full planning pass on the paper checkpoints (depth row, 84 evals, release configs, results in
+  `/mnt/vast/home/kevin/hjepa_paper_ckpt_evals/`): Cube equals the paper, FourRoom and Push-T within noise, Ant
+  systematically lower (H-JEPA 3: 64.7 vs 73.3; H-JEPA 4: 55.3 vs 67.3; same eval-task file). Not investigated yet.
+- 2026-10-06 the `hjepa` env (torch 2.14, mujoco 3.14) gives different Cube episode outcomes than `stable_wm`
+  (torch 2.12, mujoco 3.8.1) on the same checkpoint, with bit-identical model outputs: consider pinning mujoco/torch.
+
 - Datasets on HF `jepa-world-models/h-jepa` (2026-10-01): the 8 AntMaze/FourRoom `.h5` files (image columns
   re-stored with lossless Blosc-Zstd, 90 -> 32 GB; `observation`, an exact copy of `pixels`, dropped from the
   non-training AntMaze files; every column verified against the originals), `pusht_expert_val.h5` and

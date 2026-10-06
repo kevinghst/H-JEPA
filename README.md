@@ -6,8 +6,7 @@
   <a href="https://github.com/kevinghst/H-JEPA" target="_blank" style="margin: 2px;"><img alt="Github" src="https://img.shields.io/badge/Github-kevinghst/H--JEPA-black?logo=github" style="display: inline-block; vertical-align: middle;"/></a>
   <a href="https://huggingface.co/datasets/jepa-world-models/h-jepa" target="_blank" style="margin: 2px;"><img alt="HuggingFace Dataset" src="https://img.shields.io/badge/🤗%20Dataset-jepa--world--models/h--jepa-ffc107" style="display: inline-block; vertical-align: middle;"/></a>
   <a href="https://huggingface.co/jepa-world-models/h-jepa" target="_blank" style="margin: 2px;"><img alt="HuggingFace Models" src="https://img.shields.io/badge/🤗%20Models-jepa--world--models/h--jepa-ffc107" style="display: inline-block; vertical-align: middle;"/></a>
-  <!-- TODO: replace XXXX.XXXXX with the arXiv id (link and badge) -->
-  <a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank" style="margin: 2px;"><img alt="ArXiv" src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b5212f?logo=arxiv" style="display: inline-block; vertical-align: middle;"/></a>
+  <a href="https://arxiv.org/abs/2610.06805" target="_blank" style="margin: 2px;"><img alt="ArXiv" src="https://img.shields.io/badge/arXiv-2610.06805-b5212f?logo=arxiv" style="display: inline-block; vertical-align: middle;"/></a>
 </div>
 
 <br>
@@ -177,7 +176,8 @@ edits do not reach them. Wall-clock limits are `time` for training and `eval.tim
 
 This covers the bottom row of the depth figure and the level-1 columns of the cost-ladder tables. The
 paper uses seeds 42, 43 and 44 for every model, with the planner seed equal to the model seed. Reference
-numbers are success rates (%, mean ± SE over the three seeds). Commands run from `h_jepa/` unless noted.
+numbers are the paper's success rates (%, mean ± SE over the three seeds). Commands run from `h_jepa/`
+unless noted.
 
 ### 4.1) Datasets
 
@@ -289,7 +289,27 @@ The runs are sequential; restrict them with `ENVS`, `MODELS` and `SEEDS` (e.g.
 `ENVS=cube MODELS="lewm hjepa_l3" SEEDS=42 scripts/train_all.sh`), or on a cluster submit each
 `main_hjepa.py` command as its own job. Each run writes the outputs listed in §3.1.
 
-### 4.4) Depth figure
+### 4.4) Pretrained checkpoints
+
+Instead of training (§4.3), download the trained models of all 4 environments × 7 models × 3 seeds
+(84 checkpoints, 9.1 GB) from [`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa):
+
+```bash
+hf download jepa-world-models/h-jepa --local-dir $HJEPA_HOME/ckpts
+# one environment only: add --include "cube/*"; one seed: --include "*/seed42/*"
+```
+
+They land in the layout training writes (`$HJEPA_HOME/ckpts/<env>/<env>_<model>/seed<seed>/`, with
+`<env>_<model>_object.ckpt` and `normalizer.pt`), so the evals of §4.5 and §4.6 run on them directly:
+
+```bash
+scripts/eval_depth.sh
+scripts/eval_cost_ladder.sh
+```
+
+Planning needs only the evaluation tasks (§4.2), not the datasets.
+
+### 4.5) Depth figure
 
 Each training run ends with the planning eval behind the depth figure (flat planning
 for LeWM, n-level planning for H-JEPA and HWM with n levels), so the numbers come out as a byproduct of
@@ -319,7 +339,7 @@ sample counts per level. Cube's 3- and 4-level planners keep the levels above 2 
 levels are skipped (2-level planning of a deeper model). No four-level compute sweep was run on Push-T,
 so `pusht_l4` keeps the original planner setting.
 
-### 4.5) Cost ladder
+### 4.6) Cost ladder
 
 Evaluate every H-JEPA model with the flat level-1 planner (the native column) and
 with the cost measured in each upper level's latent (`l2_project` … `l<n>_project` for an n-level model):
