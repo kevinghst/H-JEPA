@@ -1,7 +1,7 @@
 # DROID: 2-level hierarchical planning, run by eval.py (droid_eval.py, offline, open-loop).
 # Level 2 plans 12 macro-steps (36 // stride 3) scored on the endpoint and passes all 12
 # as subgoals; level 1 plans the 36-step goal window scoring every subgoal (weight 0.5 on
-# the intermediate ones). Defaults are the release cell of both HWM and H-JEPA (README §5.3).
+# the intermediate ones). Defaults are the release cell of both HWM and H-JEPA (README §5.4).
 policy: ???
 seed: 1234
 output:
@@ -41,7 +41,7 @@ solver:
       early_stop_rel_delta: 0.01
       batch_size: 1
       var_scale: 1.5
-      num_samples: 16
+      num_samples: 4
       action_noise: 0
       action_clip_sigma: 2.0
       device: cuda

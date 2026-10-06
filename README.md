@@ -125,7 +125,7 @@ states and the goal up to level k to measure cost; it requires an H-JEPA model w
 
 Evals resume by skipping saved chunks (`chunks/tasks_<start>-<end>.json`). Each chunk uses
 seed + first task index. Set `+eval.chunk_size=N` (default 1), or `null` to plan all tasks together.
-[DROID evals](#53-planning-evaluation) similarly skip saved clips and use seed + clip index.
+[DROID evals](#54-planning-evaluation) similarly skip saved clips and use seed + clip index.
 
 ### 3.4) Running on SLURM (optional)
 
@@ -208,8 +208,8 @@ bash scripts/data/collect_datasets.sh
 ```
 
 Uses the matching configs in `scripts/data/config/`. AntMaze requires the OGBench ant expert
-(`<LINK: OGBench expert policies>`): `params_400000.pkl` and `flags.json` in
-`$HJEPA_HOME/ogbench_experts/ant/`.
+(from OGBench's [expert policies](https://rail.eecs.berkeley.edu/datasets/ogbench/experts.tar.gz)):
+`params_400000.pkl` and `flags.json` in `$HJEPA_HOME/ogbench_experts/ant/`.
 
 FourRoom collection reproduced the downloads in our checks. AntMaze follows the same distribution
 but is not byte-identical because some reset randomness is unseeded. Its downloaded training set
@@ -276,12 +276,12 @@ as a separate cluster job. Outputs follow §3.1.
 
 ### 4.4) Pretrained checkpoints
 
-Download all 84 models (4 environments × 7 models × 3 seeds, 9.1 GB) from
+Download all 84 models (4 environments × 7 models × 3 seeds, 9.7 GB) from
 [`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa):
 
 ```bash
-hf download jepa-world-models/h-jepa --local-dir $HJEPA_HOME/ckpts
-# one environment only: add --include "cube/*"; one seed: --include "*/seed42/*"
+hf download jepa-world-models/h-jepa --local-dir $HJEPA_HOME/ckpts --exclude "droid/*"
+# one environment only: --include "cube/*" instead; one seed: --include "*/seed42/*"
 ```
 
 Checkpoints and `normalizer.pt` use the training layout (§3.1), ready for the eval scripts below.
@@ -335,30 +335,43 @@ Results go beside each checkpoint in `eval_flat/metrics.yaml` (native L1) and
 
 ## 5) Reproducing DROID
 
-Covers Figure 9(b) and the planner ladder of Figure 9(c).
-Train seeds are 1, 1000, 10000; planner seeds are 1, 2, 3 for each model.
+Reproduces Figure 9(b) and the planner ladder of Figure 9(c).
+Train seeds are 1, 1000, 10000; each model is planned with planner seeds 1, 2, 3.
+**For evaluation only, download the [evaluation clips](#51-data) (252 MB) and
+[checkpoints](#53-pretrained-checkpoints); the 91 GB training set is needed for training only.**
 
 ### 5.1) Data
 
-Download the DROID data (91 GB of tar shards, CC BY 4.0, see the dataset card) into
-`$HJEPA_HOME/droid/` and unpack it in place:
+The DROID 1.0.1 data (CC BY 4.0, see the
+[dataset card](https://huggingface.co/datasets/jepa-world-models/h-jepa)) goes to `$HJEPA_HOME/droid/`.
+
+**Evaluation clips.** The 16 evaluation episodes, raw 1280×720 in `droid_raw/1.0.1/`:
+
+```bash
+hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME \
+  --include droid/droid_raw_eval16.tar --include droid/SHA256SUMS
+(cd $HJEPA_HOME/droid && sha256sum -c --ignore-missing SHA256SUMS && tar -xf droid_raw_eval16.tar)
+```
+
+`h_jepa/droid_assets/` provides the clip manifest `droid_clips_waypoint_curated16v2_5fps_gw36.json`
+(16 clips × 37 frames, goal at step 36) and `norm_stats_droid.json` (action/proprio stats, key `full_fps5`).
+
+**Training data.** 91 GB of tar shards, re-encoded at 256×256 in `droid_256p/1.0.1/`:
 
 ```bash
 hf download jepa-world-models/h-jepa --repo-type dataset --local-dir $HJEPA_HOME --include "droid/*"
-bash $HJEPA_HOME/droid/extract.sh    # checks SHA256SUMS, untars the shards; --delete drops the tars
+bash $HJEPA_HOME/droid/extract.sh    # checks SHA256SUMS, untars all shards; --delete drops the tars
 ```
 
-Paths resolve against `$HJEPA_HOME/droid` (`droid_data.py`, decoded with `decord`):
+- `droid_paths_minus16_256p.csv`: 74,896 training episodes, all of DROID 1.0.1 minus the 16 eval clips.
+- `droid_val_indist_256p.csv`: 64 validation episodes.
 
-- `droid_paths_minus16_256p.csv`: 74,896 DROID 1.0.1 training episodes, excluding the 16 eval clips,
-  re-encoded at 256×256 in `droid_256p/1.0.1/`.
-- `droid_val_indist_256p.csv`: 64 validation episodes. Set CSV paths with `data.dataset.name` /
-  `data.dataset.val_name` in `config/train/base/droid.yaml`; absolute paths also work.
-- `droid_raw_eval16.tar`: raw 1280×720 eval episodes in `droid_raw/1.0.1/`.
+Both list episode directories relative to `$HJEPA_HOME/droid` (decoded with `decord`, `droid_data.py`).
+Set them with `data.dataset.name` / `data.dataset.val_name` in `config/train/base/droid.yaml`;
+absolute paths also work.
 
-`h_jepa/droid_assets/` provides `norm_stats_droid.json` (action/proprio stats, key `full_fps5`) and
-`droid_clips_waypoint_curated16v2_5fps_gw36.json` (16 clips × 37 frames, goal at step 36).
-Models run at 5 fps (`data.fps: 5`, 0.2 s/step): every third frame of 15 Hz footage tagged as 60 fps.
+Models run at 5 fps (`data.fps: 5`, 0.2 s/step). DROID mp4s are tagged 60 fps but hold 15 Hz footage,
+so the loader keeps every third frame.
 
 ### 5.2) Training
 
@@ -380,14 +393,34 @@ Alternatively, submit each command separately. `MODELS` and `SEEDS` filter runs.
 
 Outputs follow §3.1, with snapshots `droid_<model>_epoch_<N>_object.ckpt` every `save_every_n_epochs`.
 
-### 5.3) Planning evaluation
+### 5.3) Pretrained checkpoints
 
-Plan each clip start → goal in one open-loop call and score against ground-truth actions:
+Download the 9 models (3 models × 3 seeds, 2.7 GB) from
+[`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa):
 
 ```bash
-python eval.py --config-name droid_flat seed=<planner seed> output.dir=<dir> policy=<run>/droid_lewm_object.ckpt
-python eval.py --config-name droid_l2 seed=<planner seed> output.dir=<dir> policy=<run>/droid_hjepa_l2_object.ckpt
-python eval.py --config-name droid_l2 seed=<planner seed> output.dir=<dir> policy=<run>/droid_hwm_l2_object.ckpt
+hf download jepa-world-models/h-jepa --local-dir $HJEPA_HOME/ckpts --include "droid/*"
+# one model only: --include "droid/droid_hjepa_l2/*"; one seed: --include "droid/*/seed1/*"
+```
+
+`droid_<model>_object.ckpt` (the epoch-100 model) and `normalizer.pt` use the training layout (§5.2),
+without the epoch snapshots, ready for the eval script below.
+
+### 5.4) Planning evaluation
+
+Plan each clip start → goal in one open-loop call and score against ground-truth actions.
+Evaluate all models with planner seeds 1, 2, 3, writing `eval_{flat,l2}/plan_seed<ps>/eval.csv` beside
+each checkpoint and printing mean ± SE per model (filter with `MODELS`, `SEEDS`, `PLAN_SEEDS`):
+
+```bash
+scripts/eval_droid.sh
+```
+
+One checkpoint and planner seed (`droid_flat` for LeWM, `droid_l2` for HWM and H-JEPA):
+
+```bash
+python eval.py --config-name droid_l2 seed=<planner seed> output.dir=<dir> \
+  policy=$HJEPA_HOME/ckpts/droid/droid_hjepa_l2/seed<seed>/droid_hjepa_l2_object.ckpt
 ```
 
 Settings in `config/eval/droid_{flat,l2}.yaml`: AdamW, 90 iterations, early stopping after 30
@@ -404,29 +437,20 @@ with metrics aggregated over saved clips.
 
 | Model | Checkpoint | Config | S | η (level 1, level 2) | planner TFLOPs / episode |
 |---|---|---|---|---|---|
-| LeWM + IDM | `droid_lewm_object.ckpt` | `droid_flat` | 32 | 0.01 | 13.9 |
-| HWM | `droid_hwm_l2_object.ckpt` | `droid_l2` | 16, 16 | 0.01, 0.3 | 11.4 |
-| H-JEPA | `droid_hjepa_l2_object.ckpt` | `droid_l2` | 16, 16 | 0.01, 0.3 | 11.6 |
-
-Run all models and planner seeds, writing `eval_{flat,l2}/plan_seed<ps>/eval.csv` beside each
-checkpoint and printing mean ± SE:
-
-```bash
-scripts/eval_droid.sh
-```
+| LeWM + IDM | `droid_lewm_object.ckpt` | `droid_flat` | 32 | 0.01 | 14.5 |
+| HWM | `droid_hwm_l2_object.ckpt` | `droid_l2` | 16, 4 | 0.01, 0.3 | 10.0 |
+| H-JEPA | `droid_hjepa_l2_object.ckpt` | `droid_l2` | 16, 4 | 0.01, 0.3 | 10.1 |
 
 For the compute ladder, sweep only sample counts (per level for hierarchical models).
 
-| | Paper | This release |
-|---|---|---|
-| LeWM + IDM | 34.06 ± 1.26 | 32.52 ± 1.93 |
-| HWM | 34.96 ± 0.32 | 33.67 ± 2.85 |
-| H-JEPA | 39.95 ± 2.91 | 37.60 ± 1.98 |
+| Model | Fréchet fidelity (%) |
+|---|---|
+| LeWM + IDM | 33.57 ± 1.52 |
+| HWM | 35.65 ± 2.22 |
+| H-JEPA | 38.42 ± 0.94 |
 
-Fréchet fidelity (%, mean ± SE over train seeds, each averaged over planner seeds).
-"This release" uses the cells above (11–14 TFLOPs/episode) and level-2 action SIGReg 0.005;
-"Paper" uses each model's paper planner cell. The LeWM bar without IDM in Figure 9(b)
-is the zero-action floor.
+Mean ± SE over train seeds, each averaged over planner seeds, with the planner cells above
+(10–15 TFLOPs/episode). The LeWM bar without IDM in Figure 9(b) is the zero-action floor.
 
 ## 6) License
 
