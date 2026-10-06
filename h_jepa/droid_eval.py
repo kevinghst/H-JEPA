@@ -19,7 +19,9 @@ Paper cells (planner lr per level, level 1 first):
 Outputs under output.dir (relative: to the ckpt dir): ep_{k}/actions.pt ({"planned", "gt",
 "grasp_pos"}, raw units; k = manifest index), ep_{k}/planning_compute.json, plan_config.yaml and
 eval.csv, aggregated over every ep_*/actions.pt present so one-clip shards
-(start_index=k num_eval=1) can share one output dir.
+(start_index=k num_eval=1) can share one output dir. Each clip plans with planner seed + k
+(as eval.chunk_size=1 in planning_eval), so a rerun into the same dir (e.g. a requeued job)
+skips the clips already saved and gives the same result as one unbroken run.
 
   python eval.py --config-name droid_flat policy=$RUN/<run>_object.ckpt seed=1 output.dir=$OUT
 """
@@ -153,8 +155,17 @@ def run_clip_eval(cfg: DictConfig, model=None, results_dir: str | Path | None = 
     print(f"clips {clip_ids.start}..{clip_ids.stop - 1} of {len(ds)} | ckpt={cfg.policy}")
 
     tf = img_transform(cfg.img_size)
+    # As planning_eval's eval.chunk_size=1: every clip reseeds the planner generators with seed + k, so
+    # its plan does not depend on the clips run before it and a rerun skips the clips already saved.
+    leaves = getattr(solver, "level_solvers", {1: solver}).values()
+    gens = [(s.torch_gen, s.torch_gen.initial_seed()) for s in leaves]
     t0 = time.time()
     for k in clip_ids:
+        ep_dir = out_dir / f"ep_{k}"
+        if (ep_dir / "actions.pt").exists():
+            continue
+        for gen, seed in gens:
+            gen.manual_seed(seed + k)
         obs, actions, _states, _reward, env_info = ds[k]
         planned = plan_clip(solver, tf, obs, action_dim, int(cfg.eval_budget))  # [K, A]
         ep = {
@@ -162,10 +173,9 @@ def run_clip_eval(cfg: DictConfig, model=None, results_dir: str | Path | None = 
             "gt": actions[: planned.shape[0]].to(torch.float32),  # [K, A]
             "grasp_pos": env_info["grasp_pos"] if env_info else None,
         }
-        ep_dir = out_dir / f"ep_{k}"
         ep_dir.mkdir(exist_ok=True)
-        torch.save(ep, ep_dir / "actions.pt")
         (ep_dir / "planning_compute.json").write_text(json.dumps(pop_solve_records(solver)))
+        torch.save(ep, ep_dir / "actions.pt")  # written last: marks the clip done
         m = clip_metrics(**ep)
         print(
             f"ep {k:02d}: ate_xyz={m['ate/end_distance_xyz']:.4f}m "

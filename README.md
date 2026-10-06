@@ -139,11 +139,12 @@ Use `flat` for `lewm` and `l<n>` for `hjepa_l<n>` and `hwm_l<n>`. The `l<k>_proj
 level-1 planning with the cost measured in the level-k latent (the upper levels are skipped; the planned
 level-1 states and the goal are encoded up to level k); they apply to any H-JEPA model with at least k
 levels, since planning levels above the model's depth are dropped.
-With `+eval.chunk_size=N` the tasks are evaluated N at a time and each chunk writes
-`chunks/tasks_<start>-<end>.json` to `output.dir`; a rerun skips the chunks already written, so a
+The tasks are evaluated `eval.chunk_size` at a time (default 1; `+eval.chunk_size=N` to change it) and each
+chunk writes `chunks/tasks_<start>-<end>.json` to `output.dir`; a rerun skips the chunks already written, so a
 preempted (requeued) eval only redoes the chunk it was in. `metrics.yaml` keeps the same keys; each chunk
-reseeds the planner with the seed plus its first task index (a single chunk plans as the unchunked eval).
-With a DROID config, `eval.py` runs the open-loop DROID eval (§5.3).
+reseeds the planner with the seed plus its first task index. `+eval.chunk_size=null` plans all tasks in one
+batch instead. With a DROID config, `eval.py` runs the open-loop DROID eval (§5.3), which likewise plans
+clip k with seed + k and skips the clips already saved.
 
 ### 3.4) Running on SLURM (optional)
 
