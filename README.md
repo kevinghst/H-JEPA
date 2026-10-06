@@ -78,7 +78,7 @@ export HJEPA_HOME=/path/to/data   # datasets, expert policies and checkpoints li
 **Choose your workflow:**
 
 - **Evaluate pretrained models:** download [evaluation tasks](#42-evaluation-tasks) and
-  [checkpoints](#44-pretrained-checkpoints), then run the [depth comparison](#45-depth-comparison-figure-6)
+  [checkpoints](#44-pretrained-checkpoints-optional), then run the [depth comparison](#45-depth-comparison-figure-6)
   or [cost ladder](#46-cost-ladder-tables-1-and-9).
 - **Train from scratch:** prepare [datasets](#41-datasets) and [evaluation tasks](#42-evaluation-tasks),
   then [train](#43-training).
@@ -156,7 +156,7 @@ Sweeps run from a submission-time repo copy (`<sweep_dir>/code`). Wall-clock lim
 Reproduces the bottom row of Figure 6 and the level-1 columns of Tables 1 and 9.
 Tables report paper success rates
 (%, mean ± SE over seeds 42, 43, 44; planner seed = model seed).
-**For evaluation only, download [tasks](#42-evaluation-tasks) and [checkpoints](#44-pretrained-checkpoints);
+**For evaluation only, download [tasks](#42-evaluation-tasks) and [checkpoints](#44-pretrained-checkpoints-optional);
 datasets are needed for training and probing.**
 
 ### 4.1) Datasets
@@ -207,9 +207,14 @@ From the repository root:
 bash scripts/data/collect_datasets.sh
 ```
 
-Uses the matching configs in `scripts/data/config/`. AntMaze requires the OGBench ant expert
-(from OGBench's [expert policies](https://rail.eecs.berkeley.edu/datasets/ogbench/experts.tar.gz)):
-`params_400000.pkl` and `flags.json` in `$HJEPA_HOME/ogbench_experts/ant/`.
+Uses the matching configs in `scripts/data/config/`. AntMaze requires the
+[OGBench](https://github.com/seohongpark/ogbench) ant expert policy in `$HJEPA_HOME/ogbench_experts/ant/`:
+
+```bash
+mkdir -p $HJEPA_HOME/ogbench_experts
+wget -qO- https://rail.eecs.berkeley.edu/datasets/ogbench/experts.tar.gz \
+  | tar xz -C $HJEPA_HOME/ogbench_experts --strip-components=1 experts/ant
+```
 
 FourRoom collection reproduced the downloads in our checks. AntMaze follows the same distribution
 but is not byte-identical because some reset randomness is unseeded. Its downloaded training set
@@ -274,14 +279,15 @@ Runs are sequential. Filter with `ENVS`, `MODELS`, `SEEDS`, e.g.
 `ENVS=cube MODELS="lewm hjepa_l3" SEEDS=42 scripts/train_all.sh`, or submit each training command
 as a separate cluster job. Outputs follow §3.1.
 
-### 4.4) Pretrained checkpoints
+### 4.4) Pretrained checkpoints (optional)
 
-Download all 84 models (4 environments × 7 models × 3 seeds, 9.7 GB) from
-[`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa):
+To skip training (§4.3), download all 84 trained models (4 environments × 7 models × 3 seeds, 9.7 GB) from
+[`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa)
+(the DROID models are in §5.3):
 
 ```bash
 hf download jepa-world-models/h-jepa --local-dir $HJEPA_HOME/ckpts --exclude "droid/*"
-# one environment only: --include "cube/*" instead; one seed: --include "*/seed42/*"
+# one environment only: --include "cube/*" instead of --exclude; one seed: add --include "*/seed42/*"
 ```
 
 Checkpoints and `normalizer.pt` use the training layout (§3.1), ready for the eval scripts below.
@@ -338,7 +344,7 @@ Results go beside each checkpoint in `eval_flat/metrics.yaml` (native L1) and
 Reproduces Figure 9(b) and the planner ladder of Figure 9(c).
 Train seeds are 1, 1000, 10000; each model is planned with planner seeds 1, 2, 3.
 **For evaluation only, download the [evaluation clips](#51-data) (252 MB) and
-[checkpoints](#53-pretrained-checkpoints); the 91 GB training set is needed for training only.**
+[checkpoints](#53-pretrained-checkpoints-optional); the 91 GB training set is needed for training only.**
 
 ### 5.1) Data
 
@@ -393,9 +399,9 @@ Alternatively, submit each command separately. `MODELS` and `SEEDS` filter runs.
 
 Outputs follow §3.1, with snapshots `droid_<model>_epoch_<N>_object.ckpt` every `save_every_n_epochs`.
 
-### 5.3) Pretrained checkpoints
+### 5.3) Pretrained checkpoints (optional)
 
-Download the 9 models (3 models × 3 seeds, 2.7 GB) from
+To skip training (§5.2), download the 9 trained models (3 models × 3 seeds, 2.7 GB) from
 [`jepa-world-models/h-jepa`](https://huggingface.co/jepa-world-models/h-jepa):
 
 ```bash

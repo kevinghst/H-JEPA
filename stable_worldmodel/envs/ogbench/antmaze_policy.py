@@ -197,7 +197,7 @@ class LocomazeExplorePolicy(BasePolicy):
                 f'Expected exactly one OGBench {self.expert_name} expert '
                 f'directory from restore_path={self.restore_path}, found '
                 f'{candidates}. '
-                'Download OGBench experts.tar.gz into data_gen_scripts first.'
+                'Download the OGBench expert policies (README §4.1).'
             )
 
         flags_path = Path(candidates[0]) / 'flags.json'

@@ -19,8 +19,8 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  "torch",
-  "torchvision",
+  "torch==2.12.0",
+  "torchvision==0.27.0",
   "numpy",
   "loguru",
   "tabulate",
@@ -51,6 +51,8 @@ train = [
 ]
 
 env = [
+    "mujoco==3.8.1",  # the paper evals' version; newer mujoco changes Cube episode outcomes
+    "dm_control==1.0.41",  # newer releases require newer mujoco
     "pygame",
     "pymunk",
     "shapely",
