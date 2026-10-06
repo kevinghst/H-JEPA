@@ -26,3 +26,12 @@ h_jepa/scripts/slurm/local.yaml
 # kept locally, out of the release: the v2 DROID family (6-frame, stride 2) and its 3/4-level planners
 h_jepa/config/train/dev/
 h_jepa/config/eval/dev/
+
+# agent tooling and internal notes, kept locally
+h_jepa/.agents/
+h_jepa/.claude/
+h_jepa/AGENTS.md
+h_jepa/CLAUDE.md
+
+# local unit tests
+h_jepa/unit_tests/
