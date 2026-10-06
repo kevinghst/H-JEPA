@@ -53,13 +53,15 @@ training runs never match; compare with this test, not with training logs.
 
 Only Cube evals are deterministic run to run. Push-T, Ant and FourRoom evals are not (unseeded env
 resets, FourRoom distractor motion): the same code gives different trajectories, even different
-success, so never diff those. Reference values (paper checkpoints, 3 episodes):
+success, so never diff those. Reference values (released checkpoints, i.e. the paper checkpoints re-saved with the
+current module names; `$C` = `/mnt/vast/home/kevin/hjepa_release_ckpts`, a download of the HF model repo
+`jepa-world-models/h-jepa`; 3 episodes):
 
 | command | success |
 |---|---|
-| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/9-10-2/0/seed42/model_object.ckpt` | [T, F, F] |
-| `eval.py --config-name cube_flat eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/7-28-1/ogb_level1_seed42__stage1/ogb_level1_seed42__stage1_object.ckpt` | [F, F, F] |
-| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$HJEPA_HOME/ckpts/ogb/9-12-8/0/seed42/model_object.ckpt` | [T, F, F], steps 22 |
+| `eval.py --config-name cube_l3 eval.num_eval=3 policy=$C/cube/cube_hjepa_l3/seed42/cube_hjepa_l3_object.ckpt` | [T, F, F] |
+| `eval.py --config-name cube_flat eval.num_eval=3 policy=$C/cube/cube_lewm/seed42/cube_lewm_object.ckpt` | [F, F, F] |
+| `eval.py --config-name cube_l3_project eval.num_eval=3 policy=$C/cube/cube_hjepa_l4/seed42/cube_hjepa_l4_object.ckpt` | [T, F, F], steps 22 |
 
 Add `output.dir=$(mktemp -d)`. These cover flat, hierarchical (3 levels with the top one skipped)
 and projected-cost (4-level model) planning. Compare two metrics files with
@@ -69,8 +71,10 @@ and projected-cost (4-level model) planning. Compare two metrics files with
 
 The reproduction targets are the reference tables in the root `README.md`. `scripts/eval_depth.sh`
 and `scripts/eval_cost_ladder.sh` evaluate trained models; to check the planners against the paper
-checkpoints instead, map each `<env>_<model>` to its paper checkpoint with `runs.checkpoint(env,
-model, seed)`. Checked so far: `fourroom_l3` on `fourroom_distractors/9-11-2/4/seed42`, 50 episodes:
+checkpoints instead, map each `<env>_<model>` to its released checkpoint with `runs.checkpoint(env,
+model, seed)` (the original paper checkpoints no longer load: they pickle the pre-rename module names).
+Pass 2026-10-05 (paper checkpoints, all 84): Cube = paper, FourRoom and Push-T within noise, Ant lower
+(`.agents/release_todo.md`). Checked so far: `fourroom_l3` on `fourroom_distractors/9-11-2/4/seed42`, 50 episodes:
 98% (paper 98%). Submit through the `slurm-submit` skill; results are noisy across runs (see 3).
 
 ## Eval tasks

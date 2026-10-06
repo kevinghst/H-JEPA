@@ -141,18 +141,6 @@ class JEPA(nn.Module):
         self.target_length = None if target_length is None else int(target_length)
         self.configure_action_queue(action_queue_size)
 
-    def __setstate__(self, state):
-        # The four LeWM paper checkpoints were pickled before the kernel_size->window_size
-        # rename and carry the attribute under its old name.
-        if "temporal_kernel_size" in state and "temporal_window_size" not in state:
-            state["temporal_window_size"] = state.pop("temporal_kernel_size")
-        # The paper checkpoints were pickled before the action_encoder->action_embed and
-        # action_pooler->action_encoder rename.
-        if "action_pooler" in state["_modules"]:
-            renamed = {"action_encoder": "action_embed", "action_pooler": "action_encoder"}
-            state["_modules"] = {renamed.get(k, k): v for k, v in state["_modules"].items()}
-        self.__dict__.update(state)
-
     def _state_windows(
         self,
         x: torch.Tensor,

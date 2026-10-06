@@ -88,7 +88,8 @@ HF model repo `jepa-world-models/h-jepa`, seeds 42/43/44 (84 checkpoints), at
   release configs). End-of-training planning success, seeds 42/43/44: LeWM 16/18/22, H-JEPA 2 40/40/44, H-JEPA 3
   66/74/76, H-JEPA 4 62/74/70.
 - Everything else: the paper checkpoints of the training-config table above, loaded with this repo and re-saved so the
-  `JEPA.__setstate__` renames are stored in the file (state dicts identical). Their success with the release planners
+  current module names (`action_embed`, `action_encoder`, `temporal_window_size`) are stored in the file (state
+  dicts identical); the originals no longer load with this repo. Their success with the release planners
   (`stable_wm` env, 50 tasks, 2026-10-05 pass) is in `/mnt/vast/home/kevin/hjepa_paper_ckpt_evals/`.
 
 ## Data

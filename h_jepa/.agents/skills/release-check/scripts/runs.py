@@ -1,8 +1,10 @@
-"""Paper runs behind each release training config (seed placeholder {s}), relative to $HJEPA_HOME/ckpts."""
+"""Paper runs behind each release training config (seed placeholder {s}), relative to $HJEPA_HOME/ckpts,
+and the released checkpoints (HF model repo jepa-world-models/h-jepa, downloaded to RELEASE)."""
 import os
 import re
 
 ROOT = os.path.join(os.environ["HJEPA_HOME"], "ckpts") + "/"
+RELEASE = "/mnt/vast/home/kevin/hjepa_release_ckpts/"
 R = {
     "ant": {"lewm": "ant/7-28-2/ant_level1_union_ds_seed{s}__stage1", "hjepa_l2": "ant/9-6-3/1/seed{s}",
             "hjepa_l3": "ant/9-6-1/1/seed{s}", "hjepa_l4": "ant/9-6-2/1/seed{s}", "hwm_l2": "ant/9-12-5/0/seed{s}",
@@ -21,9 +23,8 @@ R = {
 
 
 def checkpoint(env, model, seed):
-    run = ROOT + R[env][model].format(s=seed)
-    name = os.path.basename(run) if model == "lewm" and env != "fourroom" else "model"
-    return f"{run}/{name}_object.ckpt"
+    # The paper checkpoints pickle pre-rename module names; the released copies are re-saved with the current ones.
+    return f"{RELEASE}{env}/{env}_{model}/seed{seed}/{env}_{model}_object.ckpt"
 
 
 def rename_datasets(cfg):

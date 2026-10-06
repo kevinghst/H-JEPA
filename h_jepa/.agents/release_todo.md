@@ -35,10 +35,9 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
    GPU kernels. Fix or document before release.
 8. Ant eval tasks: regeneration does not reproduce the original file (see Checks). Ship the original
    `expert_grid_d3_n50.pt` (recommended) or accept regenerated tasks?
-9. Release pretrained checkpoints? If yes: add a README section, and keep the
-   `lejepa_training_normalizer_v1` format tag and the `JEPA.__setstate__` shim that the
-   `*_object.ckpt` / `normalizer.pt` files depend on (the legacy module aliases were not needed: all
-   84 paper checkpoints load without them).
+9. Pretrained checkpoints: resolved 2026-10-06, all 84 on HF (README §4.4), re-saved with the current
+   module names; `JEPA.__setstate__` removed. Keep the `lejepa_training_normalizer_v1` format tag that
+   the released `normalizer.pt` files carry.
 10. Ant probing now uses one concatenated eval set, so the paper's Ant probe numbers (depth-probes
    figure, probing tables; `main.tex` probing-data caption says "averaged over both") are not
    reproduced exactly. Re-run the Ant probing evals and regenerate the figures, or accept the gap?
@@ -73,8 +72,10 @@ Provenance of every config: `.agents/provenance.md`. How to verify a change: the
   collaborator (`/mnt/vast/yilun/data/jepa_hier/ckpts/ant/ant_{lewm,jepa2,jepa3,jepa4}/seed42`, copied as-is): 28 in
   total; commit 7b8ba64 added seeds 43/44 the same way (84 checkpoints, 9.1 GB, SHA-256 checked against HF). Smoke test: HF download of `cube_hwm_l3` into an empty HJEPA_HOME + 1-episode `cube_l3` eval in the `hjepa`
   env ran (success). README §4.4 documents the download. Still to do: model card.
-  The shim can go once no un-re-saved dev checkpoint is needed (release-check §3 and `runs.py` load the original paper
-  checkpoints).
+  `JEPA.__setstate__` removed 2026-10-06: the original paper checkpoints no longer work with this repo (they unpickle,
+  then fail on `action_embed`); release-check §3 and `runs.checkpoint` use the re-saved copies. Gates: the three
+  release-check Cube evals equal the reference, all 84 released checkpoints load; DROID and e2e checkpoints already
+  carry the new names.
 - 2026-10-06 full planning pass on the paper checkpoints (depth row, 84 evals, release configs, results in
   `/mnt/vast/home/kevin/hjepa_paper_ckpt_evals/`): Cube equals the paper, FourRoom and Push-T within noise, Ant
   systematically lower (H-JEPA 3: 64.7 vs 73.3; H-JEPA 4: 55.3 vs 67.3; same eval-task file). Not investigated yet.
@@ -358,12 +359,10 @@ DROID (not ported from the original code)
   `droid_lewm` / `droid_hjepa_l2`, `wm.nsteps: 2`; context 1 frame and stop-gradient between passes, both fixed;
   `wm.detach_pred_target` only there), pixel/proprio loss components and the legacy flat loss format,
   intermediate_cost_weight, quick_debug + DebugArtifactCleanupCallback (per request).
-- `JEPA.__setstate__` `temporal_kernel_size` -> `temporal_window_size` shim: the four LeWM paper
-  checkpoints (level 1, all seeds) still carry the old attribute (the audit wrongly listed it as unused).
-- `JEPA.__setstate__` action-module shim: modules were renamed on 2026-09-28 (`action_encoder` ->
-  `action_embed`, `action_pooler` -> `action_encoder`; `queue_size` moved to the new
-  `action_encoder` config block), and all paper checkpoints pickle the old names.
-  `verify_train.py` maps the paper configs' old keys the same way.
+- `verify_train.py` maps the paper configs' pre-rename keys (`action_encoder` -> `action_embed`,
+  `action_pooler` -> `action_encoder`, renamed 2026-09-28). The `JEPA.__setstate__` checkpoint shim for
+  the same renames (and LeWM's `temporal_kernel_size`) was removed 2026-10-06, once the released
+  checkpoints were re-saved.
 - `CLSDecoder` in `models.module`: 3 paper checkpoints pickle it (probing also uses it).
 - callables `in_dataset: false` args (Cube's constant `cube_id: 0`; the audit wrongly listed it as
   unused).
