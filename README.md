@@ -30,12 +30,6 @@
   </a>
 </p>
 
-<p align="center">
-  <a href="assets/teaser-vertical.mp4">
-    <img src="assets/teaser-vertical.gif" alt="Alternative H-JEPA teaser layout with a large maze view, vertically stacked L3, L2, and L1 decoded subgoals, and planning success versus compute. Click for the MP4 video." width="800">
-  </a>
-</p>
-
 ---
 
 H-JEPA learns a hierarchy of action-conditioned JEPA world models end-to-end, with each level predicting farther ahead
