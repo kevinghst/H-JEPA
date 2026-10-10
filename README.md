@@ -25,16 +25,29 @@
 </p>
 
 <p align="center">
-  <img src="assets/teaser.png" alt="H-JEPA hierarchical planning in Visual AntMaze and planning success versus planner compute" width="800">
+  <a href="assets/teaser-video.mp4">
+    <img src="assets/teaser.gif" alt="Animated H-JEPA planning illustration in Visual AntMaze, with decoded subgoals at three levels and planning success versus compute. Click for the MP4 video." width="800">
+  </a>
 </p>
 
-<p align="center"><sub><b>Left:</b> hierarchical planning in Visual AntMaze; each level's first predicted state becomes the subgoal of the level below. <b>Right:</b> AntMaze planning success versus planner compute, flat LeWM against two- and three-level H-JEPA.</sub></p>
+<p align="center">
+  <a href="assets/teaser-vertical.mp4">
+    <img src="assets/teaser-vertical.gif" alt="Alternative H-JEPA teaser layout with a large maze view, vertically stacked L3, L2, and L1 decoded subgoals, and planning success versus compute. Click for the MP4 video." width="800">
+  </a>
+</p>
 
 ---
 
-Train hierarchical world models and use them for visual planning, with pretrained checkpoints
-and evaluation tools across four simulated environments and DROID.
-Built on [LeWM](https://github.com/lucas-maes/le-wm) and
+H-JEPA learns a hierarchy of action-conditioned JEPA world models end-to-end, with each level predicting farther ahead
+in its own learned latent space.
+Hierarchical planning with H-JEPA proceeds top-down: the top level optimizes progress toward the goal, and each level's predictions become subgoals for the level below.
+On Visual AntMaze, a three-level H-JEPA achieves **73.3%** planning success against **18.0%** using the flat [LeWorldModel](https://arxiv.org/abs/2603.19312), with a fraction of planner compute.
+
+This repository contains the training and planning code for H-JEPA. It supports Visual AntMaze,
+FourRoom Distractors, OGBench Cube, Push-T, and offline planning on DROID. It contains scripts to reproduce
+Figure 6 (bottom row), Tables 1 and 9, and Figure 9(b)
+of the [H-JEPA paper](https://arxiv.org/abs/2610.06805).
+It is built on [LeWM](https://github.com/lucas-maes/le-wm) and
 [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel).
 
 ## 1) Installation
