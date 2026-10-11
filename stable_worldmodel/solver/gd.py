@@ -28,6 +28,10 @@ class GradientSolver(torch.nn.Module):
         seed: Random seed for reproducibility.
         optimizer_cls: PyTorch optimizer class to use.
         optimizer_kwargs: Keyword arguments for the optimizer.
+        retain_best: Return the lowest-cost evaluated trajectory per environment,
+            including intermediate iterates. Candidates must have finite costs
+            and actions within configured clipping bounds. Raises if none was
+            evaluated. Defaults to False to preserve final-iterate selection.
     """
 
     def __init__(
@@ -46,6 +50,7 @@ class GradientSolver(torch.nn.Module):
         seed: int = 1234,
         optimizer_cls: type[torch.optim.Optimizer] = torch.optim.SGD,
         optimizer_kwargs: dict | None = None,
+        retain_best: bool = False,
     ) -> None:
         super().__init__()
         self.model = model
@@ -58,6 +63,7 @@ class GradientSolver(torch.nn.Module):
         self.early_stop_patience = max(0, int(early_stop_patience))
         self.early_stop_rel_delta = max(0.0, float(early_stop_rel_delta))
         self.action_clip_sigma = action_clip_sigma
+        self.retain_best = bool(retain_best)
         self.device = device
         self.torch_gen = torch.Generator(device=device).manual_seed(seed)
 
@@ -171,6 +177,39 @@ class GradientSolver(torch.nn.Module):
         std = queue.std(dim=0, unbiased=False).clamp_min(1e-4)
 
         return mean, std
+
+    @staticmethod
+    @torch.no_grad()
+    def _retain_best_candidate(
+        actions: torch.Tensor,
+        costs: torch.Tensor,
+        best_actions: torch.Tensor | None,
+        best_costs: torch.Tensor | None,
+        clip_bounds: tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Snapshot the best eligible evaluated trajectory per environment."""
+        valid = torch.isfinite(costs.detach())
+        valid &= torch.isfinite(actions).all(dim=-1).all(dim=-1)
+        if clip_bounds is not None:
+            lower, upper = clip_bounds
+            valid &= (
+                (actions >= lower.view(1, 1, 1, -1))
+                & (actions <= upper.view(1, 1, 1, -1))
+            ).all(dim=-1).all(dim=-1)
+        ranked_costs = costs.detach().masked_fill(~valid, float('inf'))
+        candidate_costs, sample_indices = ranked_costs.min(dim=1)
+        env_indices = torch.arange(actions.shape[0], device=actions.device)
+        # Advanced indexing copies actions before the optimizer mutates them.
+        candidate_actions = actions[env_indices, sample_indices]
+        if best_actions is None:
+            return candidate_actions, candidate_costs
+
+        improved = candidate_costs < best_costs
+        best_actions.copy_(torch.where(
+            improved[:, None, None], candidate_actions, best_actions
+        ))
+        best_costs.copy_(torch.minimum(best_costs, candidate_costs))
+        return best_actions, best_costs
 
     def _get_action_clip_bounds(self) -> tuple[torch.Tensor, torch.Tensor] | None:
         """Estimate per-dimension clipping bounds from queued latent actions."""
@@ -327,6 +366,8 @@ class GradientSolver(torch.nn.Module):
             # Perform Gradient Descent for this batch
             best_batch_score = float('inf')
             stalled_steps = 0
+            best_actions = None
+            best_costs = None
 
             for step in range(self.n_steps):
                 current_info = expanded_infos.copy()
@@ -351,6 +392,11 @@ class GradientSolver(torch.nn.Module):
                 assert costs.requires_grad, (
                     'Cost must requires_grad for GD solver.'
                 )
+
+                if self.retain_best:
+                    best_actions, best_costs = self._retain_best_candidate(
+                        batch_init, costs, best_actions, best_costs, clip_bounds
+                    )
 
                 cost = costs.sum()  # Sum cost for this batch
                 cost.backward()
@@ -405,10 +451,25 @@ class GradientSolver(torch.nn.Module):
                 final_info['intermediate_cost_weight'] = intermediate_cost_weight
                 final_costs = self.model.get_cost(final_info, batch_init)
 
-            top_idx = torch.argsort(final_costs, dim=1)[:, 0]
-            batch_indices = torch.arange(current_bs, device=batch_init.device)
-
-            top_actions_batch = batch_init[batch_indices, top_idx]
+            if self.retain_best:
+                top_actions_batch, best_costs = self._retain_best_candidate(
+                    batch_init, final_costs, best_actions, best_costs, clip_bounds
+                )
+                invalid_envs = ~torch.isfinite(best_costs)
+                if invalid_envs.any():
+                    indices = (
+                        invalid_envs.nonzero(as_tuple=True)[0] + start_idx
+                    ).cpu().tolist()
+                    raise RuntimeError(
+                        'retain_best found no finite, feasible action candidate '
+                        f'for environment indices {indices}.'
+                    )
+            else:
+                top_idx = torch.argsort(final_costs, dim=1)[:, 0]
+                batch_indices = torch.arange(
+                    current_bs, device=batch_init.device
+                )
+                top_actions_batch = batch_init[batch_indices, top_idx]
             batch_top_actions_list.append(top_actions_batch.detach().cpu())
 
             per_env_iters.extend([int(iters_run)] * current_bs)
@@ -428,6 +489,7 @@ class GradientSolver(torch.nn.Module):
             'level': int(getattr(self, 'level', 1)),
             'horizon': int(planning_horizon),
             'num_samples': int(self.num_samples),
+            'retain_best': bool(self.retain_best),
             'n_iters': per_env_iters,          # one entry per env (batch_size=1 -> per episode)
             'wall_clock': end_time - start_time,
             'wall_clock_per_env': per_env_time,

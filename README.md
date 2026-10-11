@@ -98,6 +98,16 @@ python eval.py --config-name ant_l3 seed=42 output.dir=eval_l3 \
 Results are saved beside the checkpoint in `eval_l3/metrics.yaml`; `success_rate` is reported as a percentage.
 Completed tasks are skipped on rerun. Use a new `output.dir` when changing planner settings.
 
+Gradient planning selects from the final optimizer iterate by default. To retain
+the lowest-cost evaluated trajectory across all iterates and samples for each
+environment, opt in with `+solver.retain_best=true` (flat planning), or
+`+solver.solvers.levelN.retain_best=true` for each desired hierarchical level.
+This reuses the existing cost evaluations, optimizer steps, noise draws, and
+early-stopping schedule. Only finite costs and finite actions satisfying the
+solver's clipping bounds are eligible; an environment with no eligible candidate
+raises an error. Returned predictions are rolled out from the selected actions.
+Lower model cost does not by itself establish better environment success rates.
+
 For cluster training and evaluation, see [Running on SLURM](docs/SLURM.md).
 
 ## 3) Reproducing Push-T, OGBench Cube, Visual AntMaze, FourRoom
